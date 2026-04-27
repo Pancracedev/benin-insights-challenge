@@ -34,3 +34,4 @@ models/*
 # Credentials
 credentials/
 *.json
+credentials.json
