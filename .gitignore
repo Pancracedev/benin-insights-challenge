@@ -35,3 +35,4 @@ models/*
 credentials/
 *.json
 credentials.json
+.idea/

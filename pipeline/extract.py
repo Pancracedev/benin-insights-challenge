@@ -1,43 +1,63 @@
+# pipeline/extract.py
 """
-Module d'extraction des données GDELT depuis Google BigQuery.
+GDELT data extraction module from Google BigQuery.
 
-Étape 1 du pipeline ETL — Extract.
+ETL Pipeline Step 1 — Extract.
 
-AUTHENTIFICATION :
-    Ce module n'utilise AUCUN fichier credential.json.
-    L'authentification repose sur Application Default Credentials (ADC).
-    Chaque membre exécute une seule fois :
+AUTHENTICATION:
+    This module does NOT use any credential.json file.
+    Authentication relies on Application Default Credentials (ADC).
+    Each team member runs once:
         gcloud auth application-default login
-    Le GCP_PROJECT_ID dans config.py identifie le projet de facturation.
+    GCP_PROJECT_ID in config.py identifies the billing project.
 
-DEUX MODES D'EXTRACTION :
-    - sample : 5 000 lignes avec LIMIT — pour tester le pipeline
-    - full   : SANS LIMIT — récupère TOUTES les données du Bénin 2025
+TWO EXTRACTION MODES:
+    - sample : 5,000 rows with LIMIT — for pipeline testing
+    - full   : NO LIMIT — retrieves ALL Benin 2025 data
 
-CORRECTION DU BRUIT BENIN CITY :
-    La requête SQL contient désormais un filtre anti-bruit pour
-    exclure les événements localisés à Benin City (Nigeria) qui
-    sont parfois tagués 'BN' par erreur dans GDELT.
+BENIN CITY NOISE FILTER:
+    GDELT sometimes tags events from Benin City (Nigeria)
+    with ActionGeo_CountryCode = 'BN'. The SQL query excludes
+    these false positives by checking that the full location name
+    does not contain 'nigeria', 'edo', or 'benin city'.
 
-OPTIMISATION QUOTA BIGQUERY :
-    - SELECT sur colonnes précises (jamais SELECT *)
-    - Filtre YEAR posé EN PREMIER dans le WHERE
-    - Filtre MonthYear pour cerner janvier–décembre 2025 exactement
+BUG-01 FIX:
+    Actor filters now use COUNTRY_ACTOR_CODE = 'BEN' (CAMEO format)
+    instead of COUNTRY_CODE = 'BN' (GDELT geographic format).
+    The two systems are different — using 'BN' in actor columns
+    returns zero results since 'BN' does not exist in CAMEO.
 
-Auteur  : Équipe Bénin Insights Challenge 2026
-Date    : Avril 2026
-Version : 1.1 — Correction du bruit Benin City (Nigeria)
+BIGQUERY QUOTA OPTIMIZATION:
+    - SELECT on precise columns only (never SELECT *)
+    - YEAR filter placed FIRST in WHERE clause
+    - MonthYear filter to scope January-December 2025 precisely
+
+MAJ-05 FIX:
+    run_full_extraction() now only creates RAW_DIR.
+    run_sample_extraction() only creates SAMPLES_DIR.
+    Each function is responsible only for the directories it writes to.
+
+REC-02:
+    BigQuery calls use google.api_core.retry.Retry with a 300s deadline
+    to handle transient failures (temporary quota, network timeout).
+
+Author  : Team 7 — Bénin Insights Challenge 2026
+Date    : May 2026
+Version : 1.2
 """
 
 import os
 import pandas as pd
 from google.cloud import bigquery
+from google.api_core.retry import Retry
 
-from config import (
+from .config import (
     GCP_PROJECT_ID,
     BQ_TABLE_FULL,
     COUNTRY_CODE,
+    COUNTRY_ACTOR_CODE,
     START_YEAR,
+    END_YEAR,
     START_MONTHYEAR,
     END_MONTHYEAR,
     COLUMNS,
@@ -47,91 +67,94 @@ from config import (
     RAW_DIR,
     SAMPLES_DIR,
 )
-from utils import logger, timer, create_directories, validate_dataframe
+from .utils import logger, timer, create_directories, validate_dataframe
 
 
 # ─────────────────────────────────────────────────────────────────
-# INITIALISATION DU CLIENT BIGQUERY
+# BIGQUERY CLIENT INITIALIZATION
 # ─────────────────────────────────────────────────────────────────
 
 def get_bigquery_client() -> bigquery.Client:
     """
-    Initialise et retourne un client BigQuery authentifié.
+    Initialize and return an authenticated BigQuery client.
 
-    Utilise Application Default Credentials (ADC) — aucun fichier
-    JSON requis. L'authentification est gérée par la commande :
+    Uses Application Default Credentials (ADC) — no JSON file required.
+    Authentication is managed via:
         gcloud auth application-default login
 
-    Le paramètre project=GCP_PROJECT_ID indique à BigQuery sur quel
-    projet Google Cloud imputer la consommation de quota.
+    The project=GCP_PROJECT_ID parameter tells BigQuery which
+    Google Cloud project to bill quota consumption against.
 
     Returns:
-        bigquery.Client: Client BigQuery prêt à recevoir des requêtes
+        bigquery.Client: BigQuery client ready to receive queries
 
     Raises:
-        Exception: Si l'authentification ADC échoue. Dans ce cas,
-                   exécutez : gcloud auth application-default login
+        Exception: If ADC authentication fails. In that case,
+                   run: gcloud auth application-default login
     """
     try:
-        # project= = VOTRE projet (facturation quota)
-        # Les données GDELT restent sur gdelt-bq (projet public)
+        # project= refers to YOUR billing project
+        # GDELT data remains on gdelt-bq (public project)
         client = bigquery.Client(project=GCP_PROJECT_ID)
-        logger.info(f"Connexion BigQuery — projet : {GCP_PROJECT_ID}")
+        logger.info(f"[OK] BigQuery connection established - project: {GCP_PROJECT_ID}")
         return client
     except Exception as e:
-        logger.error(f"Échec connexion BigQuery : {e}")
-        logger.error("   Solution : gcloud auth application-default login")
+        logger.error(f"[ERROR] BigQuery connection failed: {e}")
+        logger.error("  Solution: gcloud auth application-default login")
         raise
 
 
 # ─────────────────────────────────────────────────────────────────
-# CONSTRUCTION DE LA REQUÊTE SQL (CORRIGÉE)
+# SQL QUERY CONSTRUCTION
 # ─────────────────────────────────────────────────────────────────
 
 def build_query(limit: int = None) -> str:
     """
-    Construit la requête SQL optimisée pour le Bénin 2025.
+    Build the optimized SQL query for Benin 2025 data extraction.
 
-    Ordre des filtres WHERE (critique pour l'optimisation quota) :
-        1. YEAR = 2025         → BigQuery élimine toutes les partitions
-                                  hors 2025 avant de scanner quoi que ce soit
-        2. MonthYear BETWEEN   → Affine sur janvier–décembre 2025
-        3. Conditions Bénin    → Filtre multi-critères avec anti-bruit
+    WHERE clause filter order (critical for quota optimization):
+        1. YEAR = 2025         -> BigQuery eliminates all partitions
+                                  outside 2025 before scanning anything
+        2. MonthYear BETWEEN   -> Scopes to January-December 2025
+        3. Benin conditions    -> Multi-criteria filter with noise removal
 
-    FILTRE ANTI-BRUIT BENIN CITY (Nigeria) :
-        GDELT tague parfois des événements de Benin City (Nigeria)
-        avec ActionGeo_CountryCode = 'BN'. Pour exclure ces faux
-        positifs, on vérifie que :
-        - Si l'événement est localisé au Bénin (ActionGeo_CountryCode = 'BN'),
-          le nom complet du lieu NE contient PAS :
-            • "nigeria"
-            • "edo" (état nigérian dont la capitale est Benin City)
-            • "benin city"
+    BUG-01 FIX — Actor filter uses CAMEO code 'BEN':
+        Actor1CountryCode and Actor2CountryCode use the CAMEO
+        3-letter format (e.g. 'BEN'), NOT the GDELT geographic
+        2-letter format (e.g. 'BN'). Using 'BN' in actor columns
+        returns zero results. COUNTRY_ACTOR_CODE = 'BEN' is now
+        used for cases A and B of the filter.
 
-    Le paramètre limit est optionnel :
-        - En mode sample : limit=5000 → clause LIMIT ajoutée
-        - En mode full   : limit=None → AUCUNE clause LIMIT
-                           → toutes les données sont récupérées
+    BENIN CITY NOISE FILTER:
+        GDELT sometimes incorrectly tags events from Benin City
+        (Nigeria, Edo State) with ActionGeo_CountryCode = 'BN'.
+        Case C excludes locations whose full name contains
+        'nigeria', 'edo', or 'benin city'.
+
+    limit parameter:
+        - sample mode: limit=5000 -> LIMIT clause is added
+        - full mode  : limit=None -> NO LIMIT clause
+                       -> all available data is retrieved
 
     Args:
-        limit: Nombre max de lignes (None = toutes les données)
+        limit: Maximum number of rows (None = all data)
 
     Returns:
-        str: Requête SQL prête à exécuter sur BigQuery
+        str: SQL query ready to execute on BigQuery
     """
-    columns_str = ",\n        ".join(COLUMNS)
-
+    columns_str  = ",\n        ".join(COLUMNS)
     limit_clause = f"\n    LIMIT {limit}" if limit is not None else ""
-    limit_info   = f"{limit:,} lignes" if limit is not None else "TOUTES LES DONNÉES (sans limite)"
+    limit_info   = f"{limit:,} rows" if limit is not None else "ALL DATA (no limit)"
 
     query = f"""
     -- ================================================================
-    -- Pipeline GDELT — Bénin Insights Challenge 2026
-    -- Période    : Janvier 2025 → Décembre 2025 (année complète)
-    -- Pays       : {COUNTRY_CODE} (Bénin — code GDELT, différent du code ISO BJ)
-    -- Projet     : {GCP_PROJECT_ID}
-    -- Extraction : {limit_info}
-    -- Anti-bruit : Exclusion de Benin City (Nigeria)
+    -- GDELT Pipeline - Benin Insights Challenge 2026
+    -- Period  : January 2025 to December 2025 (full year)
+    -- Country : {COUNTRY_CODE} (Benin - GDELT geographic code, differs from ISO BJ)
+    -- Actors  : {COUNTRY_ACTOR_CODE} (Benin - CAMEO actor code)
+    -- Project : {GCP_PROJECT_ID}
+    -- Extract : {limit_info}
+    -- Noise   : Benin City (Nigeria) exclusion active
     -- ================================================================
 
     SELECT
@@ -140,28 +163,31 @@ def build_query(limit: int = None) -> str:
     FROM `{BQ_TABLE_FULL}`
 
     WHERE
-        -- FILTRE 1 (prioritaire) : année
-        -- BigQuery supprime toutes les partitions hors 2025 avant de scanner.
-        -- Ce filtre DOIT toujours être en premier pour économiser le quota.
+        -- Filter 1 (priority): year
+        -- BigQuery eliminates all partitions outside 2025 before scanning.
+        -- This filter MUST always be first to save BigQuery quota.
         YEAR = {START_YEAR}
 
-        -- FILTRE 2 : mois précis — janvier (202501) à décembre (202512)
+        -- Filter 2: precise months derived from START_YEAR and END_YEAR in config.py
+        -- START_MONTHYEAR = {START_MONTHYEAR} (January {START_YEAR})
+        -- END_MONTHYEAR   = {END_MONTHYEAR}   (December {END_YEAR})
         AND MonthYear BETWEEN {START_MONTHYEAR} AND {END_MONTHYEAR}
 
-        -- FILTRE 3 : Bénin — multi-critères avec anti-bruit Benin City
+        -- Filter 3: Benin - multi-criteria with noise removal
         AND (
-            -- Cas A : Le Bénin est l'acteur principal (initiateur)
-            -- On vérifie le code pays pour éviter les homonymes
-            (Actor1CountryCode = '{COUNTRY_CODE}')
+            -- Case A: Benin is the initiating actor (Actor1)
+            -- BUG-01 FIX: uses CAMEO code 'BEN', not geographic code 'BN'
+            (Actor1CountryCode = '{COUNTRY_ACTOR_CODE}')
 
-            -- Cas B : Le Bénin est l'acteur secondaire (destinataire)
-            OR (Actor2CountryCode = '{COUNTRY_CODE}')
+            -- Case B: Benin is the receiving actor (Actor2)
+            -- BUG-01 FIX: uses CAMEO code 'BEN', not geographic code 'BN'
+            OR (Actor2CountryCode = '{COUNTRY_ACTOR_CODE}')
 
-            -- Cas C : L'événement se déroule AU BÉNIN
-            -- ⚠️  Anti-bruit : on exclut les lieux qui contiennent
-            --     "nigeria", "edo" ou "benin city" dans leur nom complet.
-            --     Cela filtre les événements de Benin City (Nigeria)
-            --     qui sont parfois tagués 'BN' par erreur dans GDELT.
+            -- Case C: The event takes place IN BENIN (geographic)
+            -- Uses geographic code 'BN' — correct for ActionGeo columns
+            -- Noise filter: excludes locations containing 'nigeria',
+            -- 'edo' or 'benin city' to remove Benin City (Nigeria)
+            -- false positives that GDELT sometimes tags as 'BN'.
             OR (
                 ActionGeo_CountryCode = '{COUNTRY_CODE}'
                 AND LOWER(ActionGeo_FullName) NOT LIKE '%nigeria%'
@@ -172,122 +198,136 @@ def build_query(limit: int = None) -> str:
     {limit_clause}
     """
 
-    logger.info(f"Requête construite — extraction : {limit_info}")
-    logger.info("Filtre anti-bruit Benin City (Nigeria) ACTIF")
+    logger.info(f"[OK] SQL query built - extraction: {limit_info}")
+    logger.info("[OK] Benin City (Nigeria) noise filter ACTIVE")
     return query
 
 
 # ─────────────────────────────────────────────────────────────────
-# EXTRACTION DEPUIS BIGQUERY
+# BIGQUERY EXTRACTION
 # ─────────────────────────────────────────────────────────────────
 
 @timer
 def extract_data(client: bigquery.Client, limit: int = None) -> pd.DataFrame:
     """
-    Exécute la requête BigQuery et retourne les données en DataFrame.
+    Execute the BigQuery query and return data as a DataFrame.
 
-    Processus interne :
-        1. Construction de la requête SQL via build_query()
-        2. Soumission du job asynchrone à BigQuery
-        3. Attente bloquante de la fin d'exécution
-        4. Conversion du résultat en DataFrame pandas
-        5. Validation que le DataFrame n'est pas vide
+    Internal steps:
+        1. Build the SQL query via build_query()
+        2. Submit the async job to BigQuery with retry support
+        3. Block until execution completes
+        4. Convert result to pandas DataFrame
+        5. Validate the result is not empty
 
-    En mode full (limit=None), BigQuery peut prendre plusieurs
-    minutes selon le volume — c'est normal, le processus est bloquant.
+    REC-02: Uses google.api_core.retry.Retry with a 300s deadline
+    to handle transient BigQuery failures (temporary quota, timeout).
+    In full mode, a query that takes 5 minutes and fails without retry
+    forces a complete restart. The retry handles this transparently.
+
+    In full mode (limit=None), BigQuery may take several minutes
+    depending on volume — this is expected, the process blocks.
 
     Args:
-        client : Client BigQuery initialisé via get_bigquery_client()
-        limit  : Nombre max de lignes. None = toutes les données
+        client : BigQuery client initialized via get_bigquery_client()
+        limit  : Maximum number of rows. None = all data
 
     Returns:
-        pd.DataFrame: Données brutes GDELT pour le Bénin 2025
+        pd.DataFrame: Raw GDELT data for Benin 2025
 
     Raises:
-        ValueError: Si le DataFrame résultant est vide
-        Exception : Si la requête BigQuery échoue
+        ValueError: If the resulting DataFrame is empty
+        Exception : If the BigQuery query fails after retries
     """
-    mode_log = f"{limit:,} lignes" if limit is not None else "TOUTES LES DONNÉES"
-    logger.info(f"Début extraction — Bénin 2025 — {mode_log}")
+    mode_log = f"{limit:,} rows" if limit is not None else "ALL DATA"
+    logger.info(f"[START] Extraction - Benin 2025 - {mode_log}")
 
     query = build_query(limit)
 
     try:
-        logger.info("Soumission de la requête à BigQuery...")
-        query_job = client.query(query)
+        logger.info("Submitting query to BigQuery...")
 
-        logger.info("Exécution en cours — patience si mode full...")
+        # REC-02: Retry with exponential backoff, 300s deadline
+        query_job = client.query(
+            query,
+            retry=Retry(deadline=300)
+        )
+
+        logger.info("Executing - please wait (full mode may take several minutes)...")
         df = query_job.to_dataframe()
 
-        if not validate_dataframe(df, "données brutes GDELT"):
-            raise ValueError("L'extraction a retourné un DataFrame vide.")
+        if not validate_dataframe(df, "raw GDELT data"):
+            raise ValueError("Extraction returned an empty DataFrame.")
 
-        logger.info(f" {len(df):,} événements extraits")
+        logger.info(f"[OK] {len(df):,} events successfully extracted")
         return df
 
     except Exception as e:
-        logger.error(f" Erreur extraction : {e}")
+        logger.error(f"[ERROR] Extraction failed: {e}")
         raise
 
 
 # ─────────────────────────────────────────────────────────────────
-# SAUVEGARDE DES DONNÉES BRUTES
+# RAW DATA SAVE
 # ─────────────────────────────────────────────────────────────────
 
 @timer
-def save_raw_data(df: pd.DataFrame, filepath: str) -> None:
+def save_raw_data(df: pd.DataFrame, filepath) -> None:
     """
-    Sauvegarde les données brutes en CSV dans data/raw/.
+    Save raw data as CSV in data/raw/.
 
-    Le fichier brut est conservé intact, sans aucune transformation.
-    Cela permet de relancer uniquement transform.py si nécessaire,
-    sans refaire une extraction BigQuery coûteuse en quota.
+    The raw file is kept intact, without any transformation.
+    This allows re-running only transform.py if needed,
+    without repeating a costly BigQuery extraction.
 
     Args:
-        df      : DataFrame brut issu de BigQuery
-        filepath: Chemin complet du fichier CSV de sortie
+        df      : Raw DataFrame from BigQuery
+        filepath: Full path of the output CSV file (str or Path)
 
     Raises:
-        IOError: Si l'écriture du fichier échoue
+        IOError: If writing the file fails
     """
     try:
         df.to_csv(filepath, index=False, encoding="utf-8")
         size_kb = round(os.path.getsize(filepath) / 1024, 1)
-        logger.info(f"✅ Données brutes sauvegardées : {filepath} ({size_kb} KB)")
+        logger.info(f"[OK] Raw data saved: {filepath} ({size_kb} KB)")
     except IOError as e:
-        logger.error(f"❌ Erreur écriture fichier : {e}")
+        logger.error(f"[ERROR] File write failed: {e}")
         raise
 
 
 # ─────────────────────────────────────────────────────────────────
-# POINTS D'ENTRÉE PUBLICS
+# PUBLIC ENTRY POINTS
 # ─────────────────────────────────────────────────────────────────
 
 @timer
 def run_sample_extraction() -> pd.DataFrame:
     """
-    Lance une extraction réduite à 5 000 lignes pour les tests.
+    Run a reduced extraction (5,000 rows) for testing.
 
-    Objectif : valider que le pipeline fonctionne correctement
-    (connexion, requête, structure des données) sans consommer
-    de quota BigQuery significatif.
+    Goal: validate that the pipeline works correctly
+    (connection, query, data structure) without consuming
+    significant BigQuery quota.
 
-    À utiliser systématiquement avant run_full_extraction().
+    MAJ-05: Only creates SAMPLES_DIR — the directory this function writes to.
+    Does not create RAW_DIR (responsibility of run_full_extraction).
+
+    Always run before run_full_extraction().
 
     Returns:
-        pd.DataFrame: Échantillon de 5 000 événements du Bénin 2025
+        pd.DataFrame: Sample of 5,000 Benin 2025 events
     """
     logger.info("=" * 55)
-    logger.info("EXTRACTION ÉCHANTILLON (5 000 lignes) — DÉMARRAGE")
+    logger.info("SAMPLE EXTRACTION (5,000 rows) - START")
     logger.info("=" * 55)
 
-    create_directories(RAW_DIR, SAMPLES_DIR)
-    client = get_bigquery_client()
+    # MAJ-05: Only create the directory this function writes to
+    create_directories(SAMPLES_DIR)
 
-    df = extract_data(client, limit=SAMPLE_LIMIT)
+    client = get_bigquery_client()
+    df     = extract_data(client, limit=SAMPLE_LIMIT)
     save_raw_data(df, SAMPLE_FILE)
 
-    logger.info("EXTRACTION ÉCHANTILLON — TERMINÉE")
+    logger.info("SAMPLE EXTRACTION - COMPLETED")
     logger.info("=" * 55)
     return df
 
@@ -295,29 +335,32 @@ def run_sample_extraction() -> pd.DataFrame:
 @timer
 def run_full_extraction() -> pd.DataFrame:
     """
-    Lance l'extraction complète SANS LIMITE sur les données du Bénin 2025.
+    Run the complete extraction WITHOUT LIMIT on Benin 2025 data.
 
-    Cette fonction récupère TOUS les événements GDELT disponibles
-    pour le Bénin entre janvier et décembre 2025, sans aucune
-    clause LIMIT dans la requête SQL.
+    Retrieves ALL GDELT events available for Benin between
+    January and December 2025, with no LIMIT clause in SQL.
 
-    ⚠️  À utiliser uniquement après validation en mode sample.
-    ⚠️  L'exécution peut prendre plusieurs minutes sur BigQuery.
-    ⚠️  Consomme plus de quota que le mode sample.
+    MAJ-05: Only creates RAW_DIR — the directory this function writes to.
+    Does not create SAMPLES_DIR (responsibility of run_sample_extraction).
+
+    WARNING: Run only after validation in sample mode.
+    WARNING: Execution may take several minutes on BigQuery.
+    WARNING: Consumes more quota than sample mode.
 
     Returns:
-        pd.DataFrame: Tous les événements du Bénin 2025 dans GDELT
+        pd.DataFrame: All Benin 2025 events in GDELT
     """
     logger.info("=" * 55)
-    logger.info("EXTRACTION COMPLÈTE (SANS LIMITE) — DÉMARRAGE")
+    logger.info("FULL EXTRACTION (NO LIMIT) - START")
     logger.info("=" * 55)
 
-    create_directories(RAW_DIR, SAMPLES_DIR)
-    client = get_bigquery_client()
+    # MAJ-05: Only create the directory this function writes to
+    create_directories(RAW_DIR)
 
-    df = extract_data(client, limit=None)
+    client = get_bigquery_client()
+    df     = extract_data(client, limit=None)
     save_raw_data(df, RAW_FILE)
 
-    logger.info("EXTRACTION COMPLÈTE — TERMINÉE")
+    logger.info("FULL EXTRACTION - COMPLETED")
     logger.info("=" * 55)
     return df

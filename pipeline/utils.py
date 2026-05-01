@@ -1,23 +1,35 @@
+# pipeline/utils.py
 """
-Fonctions utilitaires transversales du pipeline GDELT.
+Cross-cutting utility functions for the GDELT pipeline.
 
-Ce module est importé par tous les autres modules du pipeline.
-Il fournit les outils communs suivants :
+This module is imported by all other pipeline modules.
+It provides the following shared tools:
 
-    - logger            : système de logs standardisé pour tout le pipeline
-    - timer             : décorateur mesurant le temps d'exécution des fonctions
-    - create_directories: création automatique des dossiers de travail
-    - validate_dataframe: vérification de la validité des DataFrames
+    - logger            : standardized logging system for the entire pipeline
+    - timer             : decorator measuring function execution time
+    - create_directories: automatic creation of working directories
+    - validate_dataframe: DataFrame validity check
 
-Auteur  : Équipe Bénin Insights Challenge 2026
-Date    : Avril 2026
-Version : 1.0
+Changes in v1.1:
+    MAJ-02: Added functools.wraps to the timer decorator to preserve
+            function metadata (__name__, __doc__, __module__).
+    MAJ-03: Replaced logging.basicConfig() with a handler-safe setup
+            that prevents duplicate log messages on multiple imports
+            and does not pollute the root logger.
+    MIN-03: Added pd.DataFrame type hint on validate_dataframe().
+    MIN-06: Removed emojis from log messages for ASCII compatibility.
+
+Author  : Team 7 - Benin Insights Challenge 2026
+Date    : May 2026
+Version : 1.2
 """
 
 import os
 import time
 import logging
-from config import LOG_LEVEL, LOG_FORMAT
+import functools
+import pandas as pd
+from .config import LOG_LEVEL, LOG_FORMAT
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -26,140 +38,170 @@ from config import LOG_LEVEL, LOG_FORMAT
 
 def setup_logger(name: str = "gdelt_pipeline") -> logging.Logger:
     """
-    Configure et retourne un logger standardisé pour tout le pipeline.
+    Configure and return a standardized logger for the pipeline.
 
-    Le logger est utilisé dans tous les modules pour afficher
-    les messages d'information, d'avertissement et d'erreur
-    dans le terminal avec un format cohérent.
+    MAJ-03: This implementation avoids calling logging.basicConfig()
+    which adds a handler to the ROOT logger. Calling basicConfig()
+    on multiple imports (or in a Jupyter notebook) adds duplicate
+    handlers, producing repeated log messages.
 
-    Format de sortie :
-        2026-04-29 10:32:15 — INFO — Message ici
+    Instead, we configure a NAMED logger with:
+    - Handler, level and propagate set inside the guard block
+      to ensure consistent configuration on first initialization only
+    - A single StreamHandler (checked before adding)
+    - propagate=False to avoid bubbling up to the root logger
+    - This prevents interference with BigQuery client logging,
+      Streamlit, or any other library using Python logging.
+
+    Log format:
+        2026-05-01 10:32:15 - INFO - Message here
 
     Args:
-        name: Nom du logger (par défaut 'gdelt_pipeline')
+        name: Logger name (default: 'gdelt_pipeline')
 
     Returns:
-        logging.Logger: Logger configuré et prêt à l'emploi
+        logging.Logger: Configured logger ready to use
     """
-    logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL),
-        format=LOG_FORMAT
-    )
-    return logging.getLogger(name)
+    logger = logging.getLogger(name)
+
+    # Guard block: configure only once to prevent duplicate handlers.
+    # On multiple imports or Jupyter notebook reruns, getLogger(name)
+    # returns the SAME logger instance already configured — skip setup.
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        logger.addHandler(handler)
+        logger.setLevel(getattr(logging, LOG_LEVEL))
+        # Do not propagate to root logger to avoid interference
+        # with third-party libraries (BigQuery, Streamlit, etc.)
+        logger.propagate = False
+
+    return logger
 
 
-# Instance globale du logger — importée par tous les modules du pipeline
+# Global logger instance — imported by all pipeline modules
+# Usage in other modules: from .utils import logger
 logger = setup_logger()
 
 
 # ─────────────────────────────────────────────────────────────────
-# DÉCORATEUR TIMER
+# TIMER DECORATOR
 # ─────────────────────────────────────────────────────────────────
 
 def timer(func):
     """
-    Décorateur qui mesure et logue le temps d'exécution d'une fonction.
+    Decorator that measures and logs the execution time of a function.
 
-    Appliqué sur toutes les fonctions principales du pipeline pour
-    identifier les étapes lentes et documenter les performances
-    dans les logs. Utile pour le suivi et le débogage.
+    Applied to all main pipeline functions to identify slow steps
+    and document performance in logs. Useful for monitoring and debugging.
 
-    Usage :
+    MAJ-02: Uses @functools.wraps(func) to preserve the decorated
+    function's metadata (__name__, __doc__, __module__).
+    Without it, all decorated functions would appear as 'wrapper'
+    in introspection, breaking documentation tools and test frameworks.
+
+    Usage:
         @timer
-        def ma_fonction():
+        def my_function():
             ...
 
-    Produit dans les logs :
-        INFO — Démarrage : ma_fonction
-        INFO — Terminé   : ma_fonction — 3.42s
+    Produces in logs:
+        INFO - Starting: my_function
+        INFO - Completed: my_function - 3.42s
 
     Args:
-        func: Fonction à décorer
+        func: Function to decorate
 
     Returns:
-        function: Fonction enveloppée avec mesure du temps
+        function: Wrapped function with execution time measurement
     """
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         start  = time.time()
-        logger.info(f"Démarrage : {func.__name__}")
+        logger.info(f"Starting: {func.__name__}")
         result = func(*args, **kwargs)
         duration = round(time.time() - start, 2)
-        logger.info(f"Terminé   : {func.__name__} — {duration}s")
+        logger.info(f"Completed: {func.__name__} - {duration}s")
         return result
     return wrapper
 
 
 # ─────────────────────────────────────────────────────────────────
-# CRÉATION DES DOSSIERS
+# DIRECTORY CREATION
 # ─────────────────────────────────────────────────────────────────
 
-def create_directories(*paths: str) -> None:
+def create_directories(*paths) -> None:
     """
-    Crée les dossiers nécessaires au pipeline s'ils n'existent pas.
+    Create required pipeline directories if they do not exist.
 
-    Appelée au début de chaque extraction et chargement pour
-    s'assurer que les dossiers data/raw/, data/clean/ et
-    data/sample/ existent avant toute tentative d'écriture.
+    Called at the start of each extraction and load step to ensure
+    data/raw/, data/clean/ and data/sample/ exist before any
+    write attempt.
 
-    Utilise os.makedirs avec exist_ok=True — aucune erreur si le
-    dossier existe déjà. Crée également les dossiers parents
-    intermédiaires si nécessaire.
+    Uses os.makedirs with exist_ok=True — no error if the directory
+    already exists. Also creates intermediate parent directories
+    if necessary.
+
+    Accepts both str and pathlib.Path objects.
 
     Args:
-        *paths: Un ou plusieurs chemins de dossiers à créer
+        *paths: One or more directory paths to create (str or Path)
 
     Example:
-        create_directories("data/raw", "data/clean", "data/sample")
+        create_directories(RAW_DIR, PROCESSED_DIR)
     """
     for path in paths:
         os.makedirs(path, exist_ok=True)
-        logger.info(f"Dossier prêt : {path}")
+        logger.info(f"Directory ready: {path}")
 
 
 # ─────────────────────────────────────────────────────────────────
-# VALIDATION DES DATAFRAMES
+# DATAFRAME VALIDATION
 # ─────────────────────────────────────────────────────────────────
 
-def validate_dataframe(df, name: str = "dataframe") -> bool:
+def validate_dataframe(df: pd.DataFrame, name: str = "dataframe") -> bool:
     """
-    Vérifie qu'un DataFrame pandas est valide et non vide.
+    Verify that a pandas DataFrame is valid and non-empty.
 
-    Appelée entre chaque étape du pipeline (après extraction,
-    après transformation, avant chargement) pour détecter
-    immédiatement tout problème de données et éviter de propager
-    un DataFrame vide ou None aux étapes suivantes.
+    MIN-03: Added pd.DataFrame type hint on the df parameter
+    for readability and compatibility with static analysis tools.
 
-    Affiche dans les logs :
-        - Nombre de lignes et de colonnes
-        - Liste des valeurs manquantes par colonne (si présentes)
+    Called between each pipeline step (after extraction, after
+    transformation, before loading) to immediately detect any data
+    issue and avoid propagating an empty or None DataFrame to
+    subsequent steps.
+
+    Logs:
+        - Number of rows and columns
+        - Missing values per column (if any)
 
     Args:
-        df  : DataFrame pandas à valider
-        name: Nom descriptif du DataFrame pour les messages de log
+        df  : pandas DataFrame to validate
+        name: Descriptive name of the DataFrame for log messages
 
     Returns:
-        bool: True si le DataFrame est valide et non vide,
-              False si le DataFrame est None ou vide
+        bool: True if the DataFrame is valid and non-empty,
+              False if the DataFrame is None or empty
 
     Example:
-        if not validate_dataframe(df, "données brutes"):
-            raise ValueError("DataFrame invalide")
+        if not validate_dataframe(df, "raw data"):
+            raise ValueError("Invalid DataFrame")
     """
-    # Vérification que le DataFrame existe et n'est pas vide
+    # Check that the DataFrame exists and is not empty
     if df is None or df.empty:
-        logger.error(f"{name} est vide ou None — pipeline interrompu")
+        logger.error(f"[ERROR] {name} is empty or None - pipeline interrupted")
         return False
 
-    # Affichage du résumé dimensionnel
-    logger.info(f"{name} — {len(df):,} lignes × {len(df.columns)} colonnes")
+    # Log dimensional summary
+    logger.info(f"[OK] {name} - {len(df):,} rows x {len(df.columns)} columns")
 
-    # Détection et affichage des valeurs manquantes par colonne
+    # Detect and log missing values per column
     missing = df.isnull().sum()
     missing = missing[missing > 0]
     if not missing.empty:
-        logger.warning(" Valeurs manquantes détectées :")
+        logger.warning("[WARN] Missing values detected:")
         for col, count in missing.items():
             pct = round(count / len(df) * 100, 1)
-            logger.warning(f"   → {col} : {count:,} valeurs manquantes ({pct}%)")
+            logger.warning(f"  -> {col}: {count:,} missing ({pct}%)")
 
     return True
