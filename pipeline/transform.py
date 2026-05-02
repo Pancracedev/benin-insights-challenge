@@ -1,61 +1,55 @@
-# pipeline/transform.py
 """
-Module de transformation et nettoyage des données GDELT.
+GDELT data transformation and cleaning module.
 
-Étape 2 du pipeline ETL — Transform.
+ETL Pipeline Step 2 — Transform.
 
-Transformations alignées sur les 5 questions prioritaires :
+Transformations aligned with the 5 priority analytical questions:
 
-    Q1 — Quand le monde parle-t-il du Bénin ?
-         Colonnes ajoutées : event_date, event_month, event_quarter,
-                             event_root_label
+    Q1 — When does the world talk about Benin?
+         Added columns: event_date, event_month, event_quarter,
+                        event_root_label
 
-    Q2 — Le ton médiatique est-il positif, neutre ou négatif ?
-         Colonnes ajoutées : tone_category, stability_category
+    Q2 — Is the global media tone positive, neutral or negative?
+         Added columns: tone_category, stability_category
 
-    Q3 — Combien de jours pour atteindre le pic de couverture ?
-         Colonnes ajoutées : propagation_delay_days
+    Q3 — How many days to reach the media coverage peak?
+         Added columns: propagation_delay_days
 
-    Q4 — Sources en crise vs sources en période normale ?
-         Colonnes ajoutées : source_domain, is_crisis_period
+    Q4 — Are media sources during crises different from normal periods?
+         Added columns: source_domain, is_crisis_period
 
-    Q5 — Le Bénin est-il acteur ou spectateur ?
-         Colonnes ajoutées : benin_role, actor1_type_label,
-                             actor2_type_label, quad_class_label
+    Q5 — Is Benin an actor or a bystander in international events?
+         Added columns: benin_role, actor1_type_label,
+                        actor2_type_label, quad_class_label
 
-HISTORIQUE DES CORRECTIONS :
-    v1.1 — Correction benin_role : "non défini" → "Contexte"
-    v1.2 — Correction event_root_label : EventRootCode retourné par
-            BigQuery est de type int64 (ex: 4, 19). La conversion
-            str.zfill(2) dans convert_types() ne suffisait pas car
-            pandas convertit d'abord l'entier en string sans padding
-            ("4" pas "04"), cassant le mapping vers EVENT_ROOT_LABELS.
-            Correction : conversion explicite int → str → zfill(2)
-            directement dans enrich_data() avant le mapping.
-          — Correction benin_role : les valeurs NaN de Actor1CountryCode
-            et Actor2CountryCode (50%+ des lignes) étaient converties
-            en string "nan" par str(), ce qui ne correspondait jamais
-            à COUNTRY_CODE "BN". Correction : nettoyage des NaN avant
-            comparaison avec une vérification pd.isna() explicite.
+Changelog:
+    v1.0 - Initial version
+    v1.1 - Fixed benin_role logic: "non défini" -> "Contexte"
+    v1.2 - Fixed event_root_label: int64 -> zero-padded str before mapping
+         - Fixed benin_role: NaN values converted to "" before comparison
+         - Fixed actor code: COUNTRY_CODE "BN" -> COUNTRY_ACTOR_CODE "BEN"
+    v1.3 - BUG-03: Removed dead code (double event_root_label calculation)
+         - MAJ-06: Vectorized benin_role using pandas operations
+         - MAJ-09: All inline comments translated to English
 
-Auteur  : Équipe Bénin Insights Challenge 2026
-Date    : Avril 2026
+Author  : Team 7 — Bénin Insights Challenge 2026
+Date    : May 2026
 Version : 1.2
 """
 
 import re
 import pandas as pd
 import numpy as np
-from utils import logger, timer, validate_dataframe
-from config import COUNTRY_CODE, COUNTRY_ACTOR_CODE
+from .utils import logger, timer, validate_dataframe
+from .config import COUNTRY_ACTOR_CODE
 
 
 # ─────────────────────────────────────────────────────────────────
-# DICTIONNAIRES DE TRADUCTION GDELT
+# GDELT TRANSLATION DICTIONARIES
 # ─────────────────────────────────────────────────────────────────
 
-# Traduction QuadClass → libellé français
-# QuadClass classe chaque événement en 4 grandes familles
+# QuadClass -> French label
+# QuadClass classifies each event into 4 main families
 QUAD_CLASS_LABELS = {
     1: "Coopération verbale",
     2: "Coopération matérielle",
@@ -63,10 +57,10 @@ QUAD_CLASS_LABELS = {
     4: "Conflit matériel",
 }
 
-# Traduction EventRootCode → libellé français
-# GDELT classe tous les événements en 20 catégories racines.
-# Les clés sont des strings zero-padded sur 2 caractères ("01"..."20")
-# car c'est le format produit après conversion dans enrich_data().
+# EventRootCode -> French label
+# GDELT classifies all events into 20 root categories.
+# Keys are zero-padded strings on 2 characters ("01"..."20")
+# as produced after conversion in enrich_data().
 EVENT_ROOT_LABELS = {
     "01": "Déclaration publique",
     "02": "Appel / Demande",
@@ -90,8 +84,8 @@ EVENT_ROOT_LABELS = {
     "20": "Force militaire",
 }
 
-# Traduction Actor Type → libellé français
-# Utilisé pour Q5 — identifier qui parle du Bénin
+# Actor Type -> French label
+# Used for Q5 — identifying who talks about Benin
 ACTOR_TYPE_LABELS = {
     "GOV": "Gouvernement",
     "MIL": "Militaire",
@@ -120,77 +114,79 @@ ACTOR_TYPE_LABELS = {
 
 
 # ─────────────────────────────────────────────────────────────────
-# ÉTAPE 1 — NETTOYAGE DE BASE
+# STEP 1 — BASIC CLEANING
 # ─────────────────────────────────────────────────────────────────
 
 @timer
 def clean_basic(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Nettoyage de base : doublons et lignes critiques manquantes.
+    Basic cleaning: duplicates and missing critical rows.
 
-    Opérations :
-    - Suppression des lignes entièrement dupliquées
-    - Suppression des lignes sans date (SQLDATE vide) — inutilisables
-    - Suppression des lignes sans URL source (SOURCEURL vide)
-    - Réinitialisation de l'index pour des indices propres
+    Operations:
+    - Remove fully duplicated rows
+    - Remove rows without date (SQLDATE) — unusable
+    - Remove rows without source URL (SOURCEURL) — unverifiable
+    - Reset index for clean sequential indexing
 
     Args:
-        df: DataFrame brut issu de extract.py
+        df: Raw DataFrame from extract.py
+
     Returns:
-        pd.DataFrame: DataFrame nettoyé
+        pd.DataFrame: Cleaned DataFrame
     """
     n = len(df)
-    logger.info(f"Nettoyage de base — {n:,} lignes en entrée")
+    logger.info(f"Basic cleaning - {n:,} rows in")
 
     df = df.drop_duplicates()
     df = df.dropna(subset=["SQLDATE"])
     df = df.dropna(subset=["SOURCEURL"])
     df = df.reset_index(drop=True)
 
-    logger.info(f"✅ Nettoyage terminé — {n - len(df):,} lignes supprimées, {len(df):,} conservées")
+    logger.info(f"[OK] Basic cleaning done - {n - len(df):,} rows removed, {len(df):,} kept")
     return df
 
 
 # ─────────────────────────────────────────────────────────────────
-# ÉTAPE 2 — CONVERSION DES TYPES
+# STEP 2 — TYPE CONVERSION
 # ─────────────────────────────────────────────────────────────────
 
 @timer
 def convert_types(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Convertit chaque colonne dans son type Python/pandas approprié.
+    Convert each column to its appropriate Python/pandas type.
 
-    Conversions effectuées :
-    - SQLDATE (int YYYYMMDD)         → datetime pandas
-    - DATEADDED (int YYYYMMDDHHMMSS) → datetime pandas (pour Q3)
-    - GoldsteinScale, AvgTone, coordonnées → float
-    - NumArticles, NumMentions, NumSources → int
-    - EventRootCode → gardé en l'état ici, converti dans enrich_data()
-      avec une logique int→str→zfill(2) plus fiable (voir v1.2)
+    Conversions performed:
+    - SQLDATE (int YYYYMMDD)          -> pandas datetime
+    - DATEADDED (int YYYYMMDDHHMMSS)  -> pandas datetime (for Q3)
+    - GoldsteinScale, AvgTone, coords -> float
+    - NumArticles, NumMentions, etc.  -> int
+    - EventRootCode                   -> left as-is here, converted
+                                         in enrich_data() with a more
+                                         reliable int->str->zfill(2) logic
 
-    Note v1.2 : EventRootCode n'est plus converti ici en str.zfill(2)
-    car BigQuery retourne un int64 natif (ex: 4, 19) que pandas
-    convertit en "4" et non "04" lors d'un simple astype(str).
-    La conversion correcte est faite directement dans enrich_data()
-    juste avant le mapping vers EVENT_ROOT_LABELS.
+    Note v1.3: EventRootCode is NOT converted to str.zfill(2) here
+    because BigQuery returns a native int64 (e.g. 4, 19) which pandas
+    converts to "4" not "04" with a simple astype(str).
+    The correct conversion is done in enrich_data() just before
+    mapping to EVENT_ROOT_LABELS.
 
     Args:
-        df: DataFrame après nettoyage
-    Returns:
-        pd.DataFrame: DataFrame avec les bons types
-    """
-    logger.info("Conversion des types...")
+        df: DataFrame after basic cleaning
 
-    # ── Dates ─────────────────────────────────────────────────────
-    # SQLDATE format GDELT : YYYYMMDD (ex: 20250415 → 2025-04-15)
+    Returns:
+        pd.DataFrame: DataFrame with correct types
+    """
+    logger.info("Type conversion...")
+
+    # Date conversion: GDELT SQLDATE format YYYYMMDD -> datetime
     df["SQLDATE"] = pd.to_datetime(
         df["SQLDATE"].astype(str).str[:8],
         format="%Y%m%d",
-        errors="coerce"   # Les dates invalides deviennent NaT
+        errors="coerce"   # Invalid dates become NaT
     )
 
-    # DATEADDED format GDELT : YYYYMMDDHHMMSS (ex: 20250415143000)
-    # On prend uniquement les 8 premiers caractères (date seule)
+    # DATEADDED format GDELT YYYYMMDDHHMMSS -> datetime (Q3)
+    # Take only the first 8 characters (date only)
     if "DATEADDED" in df.columns:
         df["DATEADDED"] = pd.to_datetime(
             df["DATEADDED"].astype(str).str[:8],
@@ -198,166 +194,152 @@ def convert_types(df: pd.DataFrame) -> pd.DataFrame:
             errors="coerce"
         )
 
-    # ── Numériques continus ───────────────────────────────────────
+    # Continuous numeric columns
     for col in ["GoldsteinScale", "AvgTone", "ActionGeo_Lat", "ActionGeo_Long"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # ── Numériques entiers ────────────────────────────────────────
+    # Integer numeric columns
     for col in ["NumArticles", "NumMentions", "NumSources", "IsRootEvent", "QuadClass"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
-    logger.info("✅ Types convertis")
+    logger.info("[OK] Types converted")
     return df
 
 
 # ─────────────────────────────────────────────────────────────────
-# ÉTAPE 3 — ENRICHISSEMENT (Q1 → Q5)
+# STEP 3 — ENRICHMENT (Q1 -> Q5)
 # ─────────────────────────────────────────────────────────────────
 
 @timer
 def enrich_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Ajoute les colonnes dérivées alignées sur les 5 questions.
+    Add derived columns aligned with the 5 analytical questions.
 
-    Q1 — event_date, event_month, event_quarter, event_root_label
-    Q2 — tone_category, stability_category
-    Q3 — propagation_delay_days
-    Q4 — source_domain, is_crisis_period
-    Q5 — benin_role, actor1_type_label, actor2_type_label, quad_class_label
+    Q1 - event_date, event_month, event_quarter, event_root_label
+    Q2 - tone_category, stability_category
+    Q3 - propagation_delay_days
+    Q4 - source_domain, is_crisis_period
+    Q5 - benin_role, actor1_type_label, actor2_type_label, quad_class_label
 
     Args:
-        df: DataFrame après conversion des types
-    Returns:
-        pd.DataFrame: DataFrame enrichi avec toutes les colonnes dérivées
-    """
-    logger.info("Enrichissement des données (Q1 → Q5)...")
+        df: DataFrame after type conversion
 
-    # ── Q1 — Colonnes temporelles et type d'événement ─────────────
+    Returns:
+        pd.DataFrame: Enriched DataFrame with all derived columns
+    """
+    logger.info("Data enrichment (Q1 -> Q5)...")
+
+    # -- Q1: Temporal columns and event type ----------------------
     df["event_date"]    = df["SQLDATE"].dt.strftime("%Y-%m-%d")
     df["event_month"]   = df["SQLDATE"].dt.month
     df["event_quarter"] = df["SQLDATE"].dt.to_period("Q").astype(str)
 
-    # CORRECTION v1.2 — event_root_label
-    # Problème : EventRootCode arrive de BigQuery en int64 (ex: 4, 19).
-    # Un simple astype(str) donne "4" et non "04".
-    # str.zfill(2) dans convert_types() ne résout pas le problème
-    # car pandas sur int64 donne "4".zfill(2) = "4" et non "04".
-    # Solution : convertir en int puis en str formaté sur 2 chiffres
-    # avec str(int(x)).zfill(2) pour garantir "04", "19", etc.
-    df["event_root_label"] = (
-        pd.to_numeric(df["EventRootCode"], errors="coerce")  # s'assure d'avoir un numérique
-        .dropna()                                             # ignore les NaN temporairement
-        .astype(int)                                          # int64 → int natif Python
-        .astype(str)                                          # int → "4", "19"
-        .str.zfill(2)                                         # "4" → "04", "19" → "19"
-        .map(EVENT_ROOT_LABELS)                               # "04" → "Consultation"
-    )
-    # Réapplication sur le DataFrame complet avec fillna pour les NaN
+    # v1.3 BUG-03 FIX: Removed dead code (lines 249-256 of previous version).
+    # The previous version had two blocks computing event_root_label.
+    # The first block (via .dropna() chain) produced a result that was
+    # never assigned to df["event_root_label"] — it was dead code.
+    # Only the correct block below (via apply lambda) is kept.
+    #
+    # v1.2 FIX: EventRootCode arrives from BigQuery as int64 (e.g. 4, 19).
+    # A simple astype(str) gives "4" not "04".
+    # Solution: convert via float() -> int() -> str() -> zfill(2)
+    # to guarantee "04", "19", etc. regardless of the input type.
     df["event_root_label"] = (
         df["EventRootCode"]
         .apply(lambda x: str(int(float(x))).zfill(2) if pd.notna(x) else None)
         .map(EVENT_ROOT_LABELS)
         .fillna("Autre")
     )
-    logger.info("   Q1 ✅")
+    logger.info("  Q1 [OK]")
 
-    # ── Q2 — Catégorie de ton et de stabilité ─────────────────────
-    # AvgTone : [-100, +100] — seuils calibrés sur GDELT Afrique
+    # -- Q2: Tone and stability categories ------------------------
+    # AvgTone: [-100, +100] — thresholds calibrated on GDELT Africa
     def tone_cat(v: float) -> str:
-        """Catégorise le ton médiatique d'un événement."""
-        if pd.isna(v): return "Inconnu"
+        """Categorize the media tone of a GDELT event."""
+        if pd.isna(v):  return "Inconnu"
         return "Positif" if v > 2 else ("Négatif" if v < -2 else "Neutre")
 
-    # GoldsteinScale : [-10, +10] — impact sur la stabilité nationale
+    # GoldsteinScale: [-10, +10] — national stability impact
     def stability_cat(v: float) -> str:
-        """Catégorise l'impact sur la stabilité nationale."""
-        if pd.isna(v): return "Inconnu"
+        """Categorize the national stability impact of an event."""
+        if pd.isna(v):  return "Inconnu"
         return "Stabilisant" if v > 3 else ("Déstabilisant" if v < -3 else "Neutre")
 
     df["tone_category"]      = df["AvgTone"].apply(tone_cat)
     df["stability_category"] = df["GoldsteinScale"].apply(stability_cat)
-    logger.info("   Q2 ✅")
+    logger.info("  Q2 [OK]")
 
-    # ── Q3 — Délai de propagation médiatique ─────────────────────
-    # Mesure le nombre de jours entre :
-    #   - SQLDATE    : date à laquelle l'événement s'est produit
-    #   - DATEADDED  : date à laquelle GDELT a indexé l'événement
-    # Un délai de 0 = couverture immédiate
-    # Un délai > 7 = événement couvert tardivement
+    # -- Q3: Media propagation delay ------------------------------
+    # Measures the number of days between:
+    #   - SQLDATE   : date the event occurred
+    #   - DATEADDED : date GDELT indexed the event
+    # Delay of 0 = immediate coverage
+    # Delay > 7   = late coverage
     if "DATEADDED" in df.columns:
         df["propagation_delay_days"] = (
             (df["DATEADDED"] - df["SQLDATE"])
             .dt.days
-            .clip(lower=0)  # On ignore les valeurs négatives (erreurs de données)
+            .clip(lower=0)  # Ignore negative values (data errors)
         )
     else:
         df["propagation_delay_days"] = np.nan
-        logger.warning("   Q3 — DATEADDED absent, propagation_delay_days = NaN")
-    logger.info("   Q3 ✅")
+        logger.warning("[WARN] DATEADDED column absent, propagation_delay_days = NaN")
+    logger.info("  Q3 [OK]")
 
-    # ── Q4 — Domaine source et détection de période de crise ──────
+    # -- Q4: Source domain and crisis period detection ------------
     def extract_domain(url: str) -> str:
         """
-        Extrait le nom de domaine depuis une URL source GDELT.
-        Ex: "https://www.rfi.fr/fr/afrique/..." → "rfi.fr"
+        Extract domain name from a GDELT source URL.
+        Example: "https://www.rfi.fr/fr/afrique/..." -> "rfi.fr"
         """
         if pd.isna(url) or url == "":
-            return "inconnu"
+            return "unknown"
         try:
             domain = re.sub(r"https?://(www\.)?", "", str(url))
             return domain.split("/")[0].lower()
         except Exception:
-            return "inconnu"
+            return "unknown"
 
     df["source_domain"] = df["SOURCEURL"].apply(extract_domain)
 
-    # Période de crise définie par deux seuils cumulables :
-    # - AvgTone < -5       : couverture médiatique très négative
-    # - GoldsteinScale < -5 : événement très déstabilisant
+    # Crisis period: very negative tone OR very destabilizing event
+    # Thresholds are adjustable based on exploratory analysis results
     df["is_crisis_period"] = (
         (df["AvgTone"] < -5.0) | (df["GoldsteinScale"] < -5.0)
     )
-    logger.info("   Q4 ✅")
+    logger.info("  Q4 [OK]")
 
-    # ── Q5 — Rôle du Bénin : Acteur, Spectateur, Mixte ou Contexte ─
-    def benin_role(row) -> str:
-        """
-        Détermine le rôle du Bénin dans un événement GDELT.
+    # -- Q5: Benin's role — Actor, Bystander, Mixed or Context -----
+    #
+    # MAJ-06 FIX: Replaced df.apply(func, axis=1) with vectorized
+    # pandas operations. apply(axis=1) runs a Python loop on each row,
+    # which is significantly slower on large DataFrames (full mode).
+    # Vectorized operations use numpy under the hood — much faster.
+    #
+    # Logic:
+    # - "Acteur"     : Benin is Actor1 (initiator of the event)
+    # - "Spectateur" : Benin is Actor2 (target/object of the event)
+    # - "Mixte"      : Benin is both (internal Beninese event)
+    # - "Contexte"   : Benin is neither actor nor target but the event
+    #                  takes place on its territory
 
-        IMPORTANT : GDELT utilise deux codes pays distincts selon la colonne :
-        - ActionGeo_CountryCode : code GDELT géographique → 'BN'
-          Utilisé pour filtrer les événements qui se passent AU Bénin.
-        - Actor1/2CountryCode   : code CAMEO des acteurs → 'BEN'
-          Utilisé pour identifier si le Bénin est acteur ou spectateur.
-        Ces deux codes sont DIFFÉRENTS — c'est la source du bug v1.2.
+    # Normalize actor country codes: NaN -> "", strip whitespace, uppercase
+    # This avoids NaN being converted to string "nan" which never matches "BEN"
+    a1 = df["Actor1CountryCode"].fillna("").str.strip().str.upper()
+    a2 = df["Actor2CountryCode"].fillna("").str.strip().str.upper()
+    bn = COUNTRY_ACTOR_CODE.strip().upper()  # "BEN"
 
-        Quatre cas possibles :
-        - Acteur     : Bénin est Actor1 — il initie l'événement
-        - Spectateur : Bénin est Actor2 — il est la cible / l'objet
-        - Mixte      : Bénin est les deux — événement interne béninois
-        - Contexte   : Bénin n'est ni acteur ni spectateur mais
-                       l'événement se déroule sur son territoire
-        """
-        a1_raw = row.get("Actor1CountryCode", None)
-        a2_raw = row.get("Actor2CountryCode", None)
+    # Start with default value
+    df["benin_role"] = "Contexte"
 
-        # Nettoyage des NaN avant comparaison
-        a1 = "" if pd.isna(a1_raw) else str(a1_raw).strip().upper()
-        a2 = "" if pd.isna(a2_raw) else str(a2_raw).strip().upper()
+    # Apply in order: Acteur, Spectateur, then Mixte (overrides previous)
+    df.loc[a1 == bn, "benin_role"] = "Acteur"
+    df.loc[a2 == bn, "benin_role"] = "Spectateur"
+    df.loc[(a1 == bn) & (a2 == bn), "benin_role"] = "Mixte"  # Override both
 
-        # Code CAMEO acteurs = 'BEN' (différent du code géo 'BN')
-        bn = COUNTRY_ACTOR_CODE.strip().upper()
-
-        if a1 == bn and a2 == bn: return "Mixte"
-        if a1 == bn:              return "Acteur"
-        if a2 == bn:              return "Spectateur"
-        return "Contexte"
-
-    df["benin_role"] = df.apply(benin_role, axis=1)
-
-    # Traduction des types d'acteurs en libellés français
+    # Translate actor type codes to French labels
     df["actor1_type_label"] = (
         df["Actor1Type1Code"]
         .map(ACTOR_TYPE_LABELS)
@@ -369,45 +351,46 @@ def enrich_data(df: pd.DataFrame) -> pd.DataFrame:
         .fillna("Non identifié")
     )
 
-    # Traduction QuadClass en libellé français
+    # Translate QuadClass to French label
     df["quad_class_label"] = (
         df["QuadClass"]
         .map(QUAD_CLASS_LABELS)
         .fillna("Inconnu")
     )
-    logger.info("   Q5 ✅")
+    logger.info("  Q5 [OK]")
 
-    logger.info("✅ Enrichissement terminé")
+    logger.info("[OK] Enrichment completed")
     return df
 
 
 # ─────────────────────────────────────────────────────────────────
-# ÉTAPE 4 — FILTRAGE FINAL
+# STEP 4 — FINAL FILTERING
 # ─────────────────────────────────────────────────────────────────
 
 @timer
 def filter_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Filtrage qualité final des données.
+    Final quality filtering of the data.
 
-    Filtres appliqués :
-    - Suppression des lignes avec date invalide (NaT après conversion)
-    - Suppression des coordonnées GPS hors bornes géographiques
-      (latitude hors [-90, 90] ou longitude hors [-180, 180])
+    Filters applied:
+    - Remove rows with invalid dates (NaT after conversion)
+    - Remove GPS coordinates outside valid geographic bounds
+      (latitude outside [-90, 90] or longitude outside [-180, 180])
 
     Args:
-        df: DataFrame enrichi
+        df: Enriched DataFrame
+
     Returns:
-        pd.DataFrame: DataFrame propre, validé et prêt pour l'équipe
+        pd.DataFrame: Clean, validated DataFrame ready for the team
     """
     n = len(df)
-    logger.info(f"Filtrage final — {n:,} lignes en entrée")
+    logger.info(f"Final filtering - {n:,} rows in")
 
-    # Suppression des dates invalides générées lors de la conversion
+    # Remove invalid dates generated during type conversion
     df = df.dropna(subset=["SQLDATE"])
-    logger.info(f"   Après filtre dates invalides   : {len(df):,} lignes")
+    logger.info(f"  After invalid date filter : {len(df):,} rows")
 
-    # Suppression des coordonnées GPS aberrantes
+    # Remove aberrant GPS coordinates
     if "ActionGeo_Lat" in df.columns:
         df = df[
             df["ActionGeo_Lat"].isna() |
@@ -418,50 +401,51 @@ def filter_data(df: pd.DataFrame) -> pd.DataFrame:
             df["ActionGeo_Long"].isna() |
             df["ActionGeo_Long"].between(-180, 180)
         ]
-    logger.info(f"   Après filtre coordonnées GPS   : {len(df):,} lignes")
+    logger.info(f"  After GPS coordinate filter: {len(df):,} rows")
 
-    logger.info(f"✅ Filtrage terminé — {n - len(df):,} lignes supprimées")
+    logger.info(f"[OK] Final filtering done - {n - len(df):,} rows removed")
     return df
 
 
 # ─────────────────────────────────────────────────────────────────
-# FONCTION PRINCIPALE D'ORCHESTRATION
+# MAIN ORCHESTRATION FUNCTION
 # ─────────────────────────────────────────────────────────────────
 
 @timer
 def run_transform(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Orchestre les 4 étapes de transformation dans l'ordre.
+    Orchestrate all 4 transformation steps in order.
 
-    Pipeline complet :
-        1. clean_basic()   — suppression doublons et lignes critiques
-        2. convert_types() — conversion des types de données
-        3. enrich_data()   — ajout colonnes dérivées Q1 → Q5
-        4. filter_data()   — filtrage qualité final
+    Full pipeline:
+        1. clean_basic()   - duplicate and critical row removal
+        2. convert_types() - data type conversion
+        3. enrich_data()   - derived column addition Q1 -> Q5
+        4. filter_data()   - final quality filtering
 
     Args:
-        df: DataFrame brut issu de extract.py
+        df: Raw DataFrame from extract.py
+
     Returns:
-        pd.DataFrame: Données propres, enrichies, prêtes pour l'équipe
+        pd.DataFrame: Clean, enriched data ready for the team
 
     Raises:
-        ValueError: Si le DataFrame d'entrée est invalide ou vide
+        ValueError: If the input DataFrame is invalid or empty
     """
     logger.info("=" * 55)
-    logger.info("TRANSFORMATION — DÉMARRAGE")
+    logger.info("TRANSFORM - START")
     logger.info("=" * 55)
 
-    if not validate_dataframe(df, "données brutes"):
-        raise ValueError("DataFrame d'entrée invalide — transformation annulée.")
+    if not validate_dataframe(df, "raw data"):
+        raise ValueError("Invalid input DataFrame - transformation cancelled.")
 
     df = clean_basic(df)
     df = convert_types(df)
     df = enrich_data(df)
     df = filter_data(df)
 
-    validate_dataframe(df, "données transformées finales")
+    validate_dataframe(df, "final transformed data")
 
     logger.info("=" * 55)
-    logger.info("TRANSFORMATION — TERMINÉE")
+    logger.info("TRANSFORM - COMPLETED")
     logger.info("=" * 55)
     return df

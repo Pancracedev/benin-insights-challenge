@@ -1,54 +1,71 @@
 """
-Script maître d'orchestration du pipeline GDELT.
+Master orchestration script for the GDELT pipeline.
 
-Point d'entrée unique — enchaîne EXTRACT → TRANSFORM → LOAD.
+Single entry point — chains EXTRACT -> TRANSFORM -> LOAD.
 
-Usage depuis le terminal (racine du projet) :
-    python pipeline/run_pipeline.py --mode sample   # test 5k lignes
-    python pipeline/run_pipeline.py --mode full     # production 100k
+Usage from the terminal (project root):
+    python/python3 -m pipeline.run_pipeline --mode sample   # test 5k rows
+    python/python3 -m pipeline.run_pipeline --mode full     # production, no limit
 
-Pré-requis (une seule fois par membre de l'équipe) :
+Prerequisites (once per team member):
     gcloud auth application-default login
 
-Auteur  : Équipe Bénin Insights Challenge 2026
-Date    : Avril 2026
-Version : 1.0
+MIN-10 FIX: @timer removed from run_pipeline() which calls sys.exit(1).
+    sys.exit() raises SystemExit (inherits from BaseException, not Exception).
+    The timer decorator does not capture SystemExit, so "Completed: run_pipeline"
+    was never logged on error. Timing is now handled manually with start_time.
+
+MIN-05 FIX: --mode full help text corrected to reflect no row limit.
+
+MIN-09 FIX: ASCII table replaced by structured log lines to avoid
+    misalignment when values exceed fixed column widths.
+
+Author  : Team 7 — Bénin Insights Challenge 2026
+Date    : May 2026
+Version : 1.2
 """
 
 import sys
 import argparse
 import traceback
 from datetime import datetime
+import pandas as pd
 
-from extract   import run_full_extraction, run_sample_extraction
-from transform import run_transform
-from load      import run_load
-from utils     import logger, timer
+
+from .extract   import run_full_extraction, run_sample_extraction
+from .transform import run_transform
+from .load      import run_load
+from .utils     import logger
+
+
+# ─────────────────────────────────────────────────────────────────
+# COMMAND LINE ARGUMENTS
+# ─────────────────────────────────────────────────────────────────
 
 def parse_arguments() -> argparse.Namespace:
     """
-    Parse les arguments de la ligne de commande.
+    Parse command line arguments.
 
     Returns:
-        argparse.Namespace: Arguments parsés
+        argparse.Namespace: Parsed arguments
     """
     parser = argparse.ArgumentParser(
-        description="Pipeline GDELT — Bénin Insights Challenge 2026",
+        description="GDELT Pipeline - Benin Insights Challenge 2026",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Exemples :
-  python pipeline/run_pipeline.py --mode sample   # test rapide
-  python pipeline/run_pipeline.py --mode full     # production
+Examples:
+  python -m pipeline.run_pipeline --mode sample   # quick test
+  python -m pipeline.run_pipeline --mode full     # production
 
-Pré-requis authentification (une seule fois) :
+Authentication prerequisite (once per team member):
   gcloud auth application-default login
 
-Questions couvertes :
-  Q1 — Quand le monde parle-t-il du Bénin ?
-  Q2 — Le ton médiatique est-il positif, neutre ou négatif ?
-  Q3 — Combien de jours pour atteindre le pic de couverture ?
-  Q4 — Sources en crise vs sources en période normale ?
-  Q5 — Le Bénin est-il acteur ou spectateur ?
+Analytical questions covered:
+  Q1 - When does the world talk about Benin?
+  Q2 - Is the media tone positive, neutral or negative?
+  Q3 - How many days to reach the coverage peak?
+  Q4 - Are crisis sources different from normal sources?
+  Q5 - Is Benin an actor or a bystander?
         """
     )
     parser.add_argument(
@@ -56,100 +73,122 @@ Questions couvertes :
         type=str,
         choices=["full", "sample"],
         default="sample",
-        help="'sample' (5k lignes, test) ou 'full' (100k lignes, production)"
+        # MIN-05 FIX: Corrected help text — full mode has no row limit
+        help="'sample' (5,000 rows, for testing) or 'full' (no limit, all available data)"
     )
     return parser.parse_args()
 
 
-def print_summary(df, start_time: datetime, mode: str) -> None:
+# ─────────────────────────────────────────────────────────────────
+# PIPELINE SUMMARY
+# ─────────────────────────────────────────────────────────────────
+
+def print_summary(df: pd.DataFrame, duration: float, mode: str) -> None:
     """
-    Affiche un résumé du pipeline après exécution.
+    Log a structured pipeline summary after successful execution.
+
+    MIN-09 FIX: Replaced fixed-width ASCII table with structured log lines.
+    Fixed-width formatting breaks when values exceed allocated widths,
+    producing misaligned output in logs. Structured lines are robust
+    regardless of value length.
 
     Args:
-        df        : DataFrame final
-        start_time: Heure de démarrage
-        mode      : Mode d'exécution
+        df      : Final output DataFrame
+        duration: Total execution time in seconds
+        mode    : Execution mode ('sample' or 'full')
     """
-    duration = round((datetime.now() - start_time).total_seconds(), 1)
-
-    logger.info("")
-    logger.info("╔══════════════════════════════════════════════════╗")
-    logger.info("║      RÉSUMÉ — PIPELINE BÉNIN INSIGHTS 2026      ║")
-    logger.info("╠══════════════════════════════════════════════════╣")
-    logger.info(f"║  Mode       : {mode:<35}║")
-    logger.info(f"║  Durée      : {str(duration) + 's':<35}║")
-    logger.info(f"║  Événements : {len(df):,}".ljust(50) + "║")
-    logger.info(f"║  Colonnes   : {len(df.columns):<35}║")
+    logger.info("=" * 55)
+    logger.info("PIPELINE SUMMARY - Benin Insights Challenge 2026")
+    logger.info("=" * 55)
+    logger.info(f"  Mode      : {mode}")
+    logger.info(f"  Duration  : {duration}s")
+    logger.info(f"  Events    : {len(df):,}")
+    logger.info(f"  Columns   : {len(df.columns)}")
 
     if "SQLDATE" in df.columns:
-        periode = f"{str(df['SQLDATE'].min())[:10]} → {str(df['SQLDATE'].max())[:10]}"
-        logger.info(f"║  Période    : {periode:<35}║")
+        date_min = str(df["SQLDATE"].min())[:10]
+        date_max = str(df["SQLDATE"].max())[:10]
+        logger.info(f"  Period    : {date_min} -> {date_max}")
 
     if "tone_category" in df.columns:
-        logger.info("╠══════════════════════════════════════════════════╣")
-        logger.info("║  Q2 — TON MÉDIATIQUE                             ║")
+        logger.info("  --- Q2: Media Tone ---")
         for tone, count in df["tone_category"].value_counts().items():
-            pct  = round(count / len(df) * 100, 1)
-            line = f"{tone:<15} {count:>7,}  ({pct}%)"
-            logger.info(f"║  {line:<48}║")
+            pct = round(count / len(df) * 100, 1)
+            logger.info(f"    {tone}: {count:,} ({pct}%)")
 
     if "benin_role" in df.columns:
-        logger.info("╠══════════════════════════════════════════════════╣")
-        logger.info("║  Q5 — RÔLE DU BÉNIN                             ║")
+        logger.info("  --- Q5: Benin Role ---")
         for role, count in df["benin_role"].value_counts().items():
-            pct  = round(count / len(df) * 100, 1)
-            line = f"{role:<15} {count:>7,}  ({pct}%)"
-            logger.info(f"║  {line:<48}║")
+            pct = round(count / len(df) * 100, 1)
+            logger.info(f"    {role}: {count:,} ({pct}%)")
 
-    logger.info("╠══════════════════════════════════════════════════╣")
-    logger.info("║  FICHIERS PRODUITS                               ║")
-    logger.info("║  data/processed/benin_gdelt_clean.csv            ║")
-    logger.info("║  data/processed/benin_gdelt_clean.parquet        ║")
-    logger.info("║  data/processed/benin_gdelt_clean.json           ║")
-    logger.info("║  data/processed/quality_report.json              ║")
-    logger.info("╚══════════════════════════════════════════════════╝")
+    logger.info("  --- Output files (data/clean/) ---")
+    logger.info("    benin_gdelt_clean.csv")
+    logger.info("    benin_gdelt_clean.parquet")
+    logger.info("    benin_gdelt_clean.json")
+    logger.info("    quality_report.json")
+    logger.info("=" * 55)
 
 
-@timer
+# ─────────────────────────────────────────────────────────────────
+# MAIN PIPELINE
+# ─────────────────────────────────────────────────────────────────
+
 def run_pipeline(mode: str = "sample") -> None:
     """
-    Orchestre EXTRACT → TRANSFORM → LOAD.
+    Orchestrate EXTRACT -> TRANSFORM -> LOAD.
 
-    En cas d'erreur, le pipeline s'arrête proprement
-    avec un message d'erreur détaillé.
+    MIN-10 FIX: @timer removed from this function because sys.exit(1)
+    raises SystemExit (BaseException subclass, not Exception).
+    The timer decorator's wrapper only calls result = func(*args, **kwargs)
+    and never reaches the "Completed" log line when SystemExit is raised.
+    Timing is now handled manually with start_time / duration.
+
+    On error, the pipeline stops cleanly with a detailed error message.
 
     Args:
-        mode: 'sample' ou 'full'
+        mode: 'sample' (5,000 rows) or 'full' (all data, no limit)
     """
     start_time = datetime.now()
 
-    logger.info("╔══════════════════════════════════════════════════╗")
-    logger.info("║    PIPELINE GDELT — BÉNIN INSIGHTS 2026         ║")
-    logger.info(f"║  Démarrage : {str(start_time)[:19]:<36}║")
-    logger.info(f"║  Mode      : {mode:<36}║")
-    logger.info("╚══════════════════════════════════════════════════╝")
+    logger.info("=" * 55)
+    logger.info("GDELT PIPELINE - BENIN INSIGHTS CHALLENGE 2026")
+    logger.info("=" * 55)
+    logger.info(f"  Start : {str(start_time)[:19]}")
+    logger.info(f"  Mode  : {mode}")
+    logger.info("=" * 55)
 
     try:
+        # Step 1: EXTRACT
         logger.info("")
-        logger.info(">>> ÉTAPE 1/3 — EXTRACTION BIGQUERY")
+        logger.info(">>> STEP 1/3 - BIGQUERY EXTRACTION")
         df_raw = run_sample_extraction() if mode == "sample" else run_full_extraction()
 
+        # Step 2: TRANSFORM
         logger.info("")
-        logger.info(">>> ÉTAPE 2/3 — TRANSFORMATION ET ENRICHISSEMENT")
+        logger.info(">>> STEP 2/3 - TRANSFORMATION AND ENRICHMENT")
         df_clean = run_transform(df_raw)
 
+        # Step 3: LOAD
         logger.info("")
-        logger.info(">>> ÉTAPE 3/3 — SAUVEGARDE DES FICHIERS")
+        logger.info(">>> STEP 3/3 - FILE SAVING")
         run_load(df_clean)
 
-        print_summary(df_clean, start_time, mode)
+        # Summary
+        duration = round((datetime.now() - start_time).total_seconds(), 1)
+        print_summary(df_clean, duration, mode)
 
     except Exception as e:
-        logger.error(f"❌ ERREUR : {e}")
+        logger.error(f"[ERROR] Pipeline failed: {e}")
         logger.error(traceback.format_exc())
         sys.exit(1)
 
 
+# ─────────────────────────────────────────────────────────────────
+# ENTRY POINT
+# ─────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
+    import pandas as pd  # noqa: F401 — needed for print_summary type hint
     args = parse_arguments()
     run_pipeline(mode=args.mode)
