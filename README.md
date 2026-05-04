@@ -47,9 +47,9 @@ Les cinq questions prioritaires qui guident l'ensemble du pipeline :
 benin-insights-challenge/
 │
 ├── data/
-│   ├── raw/       # Données brutes extraites de BigQuery (non versionnées)
-│   ├── clean/     # Données nettoyées et enrichies (non versionnées)
-│   └── sample/    # Échantillons de test 5 000 lignes (non versionnés)
+│   ├── raw/          # Données brutes extraites de BigQuery (non versionnées)
+│   ├── processed/    # Données nettoyées et enrichies (non versionnées)
+│   └── sample/       # Échantillons de test 5 000 lignes (non versionnés)
 │
 ├── pipeline/      # Pipeline ETL GDELT (Data Engineer)
 │   ├── __init__.py
@@ -61,7 +61,9 @@ benin-insights-challenge/
 │   └── utils.py         # Utilitaires transversaux
 │
 ├── tests/
-│   └── test_pipeline.py # Tests unitaires du pipeline
+│   ├── test_extract.py    # Tests sur build_query() — aucune connexion BigQuery requise
+│   ├── test_transform.py  # Tests sur clean_basic(), convert_types(), enrich_data(), filter_data()
+│   └── test_load.py       # Tests sur save_to_csv(), save_to_parquet(), save_to_json(), generate_quality_report()
 │
 ├── notebooks/     # Analyses exploratoires (Data Analyst / Data Scientist)
 ├── models/        # Modèles de machine learning (ML Engineer)

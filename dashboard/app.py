@@ -267,7 +267,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # Q1 — MEDIA VOLUME OVER TIME
 # ─────────────────────────────────────────────────────────────────
 
-st.markdown('<div class="section-title">Q1 — Quand le monde parle-t-il du Bénin ?</div>',
+st.markdown('<div class="section-title">Q1 — Quand le monde parle-t-il du Bénin, et quels événements provoquent les pics de couverture ?</div>',
             unsafe_allow_html=True)
 
 monthly = (
@@ -324,13 +324,39 @@ with col_q1b:
         )
         st.plotly_chart(fig_ev, use_container_width=True, config=CHART_CONFIG)
 
+peak_month_idx = monthly.loc[monthly["nb_articles"].idxmax(), "event_month"]
 peak_month = monthly.loc[monthly["nb_articles"].idxmax(), "month_label"]
 peak_val   = monthly["nb_articles"].max()
-st.markdown(f"""<div class="insight-box">
-    <span class="insight-num">Insight Q1</span> — Le mois de <b>{peak_month}</b> concentre
-    le plus grand nombre d'articles publiés dans le monde (<b>{peak_val:,}</b>).
-    Ce pic marque la période où l'attention internationale sur le Bénin est la plus forte en 2025.
-</div>""", unsafe_allow_html=True)
+
+# ── Find top event in peak month ──────────────────────────────
+peak_month_events = (
+    df[df["event_month"] == peak_month_idx]
+    .groupby(["SQLDATE", "event_root_label"], as_index=False)
+    .agg(articles=("NumArticles", "sum"))
+    .sort_values("articles", ascending=False)
+)
+if len(peak_month_events) > 0:
+    top_peak_event = peak_month_events.iloc[0]
+    event_label = top_peak_event["event_root_label"]
+    event_date = top_peak_event["SQLDATE"].strftime("%d %b %Y")
+    event_articles = int(top_peak_event["articles"])
+    insight_q1 = f"""<div class="insight-box">
+        <span class="insight-num">Insight Q1</span> — Le mois de <b>{peak_month}</b> concentre
+        le plus grand nombre d'articles publiés au monde (<b>{peak_val:,}</b> au total).
+        <br><br>
+        <b>Événement déclencheur</b> : <b>{event_label}</b> ({event_date})
+        avec <b>{event_articles:,} articles</b> qui expliquent ce pic de couverture.
+        <br><br>
+        → Les décideurs béninois doivent comprendre quel contexte retient l'attention
+        internationale et anticiper les périodes sensibles.
+    </div>"""
+else:
+    insight_q1 = f"""<div class="insight-box">
+        <span class="insight-num">Insight Q1</span> — Le mois de <b>{peak_month}</b> concentre
+        le plus grand nombre d'articles publiés au monde (<b>{peak_val:,}</b>).
+    </div>"""
+
+st.markdown(insight_q1, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
 # Q2 — MEDIA TONE
@@ -492,13 +518,67 @@ with col_q4b:
         use_container_width=True, config=CHART_CONFIG
     )
 
-crisis_pct    = len(crisis_df) / len(df) * 100
+crisis_pct     = len(crisis_df) / len(df) * 100
+top_src_global = df["source_domain"].value_counts().index[0] if len(df) > 0 else "N/A"
 top_src_crisis = crisis_df["source_domain"].value_counts().index[0] if len(crisis_df) > 0 else "N/A"
+
+# ── Dynamically detect the dominant country from the top source TLD ──
+# Mapping TLD → country name. Adapts automatically if data changes.
+# "punchng.com" → tld="ng" → "Nigeria"
+# "lemonde.fr"  → tld="fr" → "France"
+# "journal.bj"  → tld="bj" → "Bénin"
+TLD_TO_COUNTRY = {
+    "ng": "Nigeria",      "bj": "Bénin",         "fr": "France",
+    "sn": "Sénégal",      "ci": "Côte d'Ivoire",  "gh": "Ghana",
+    "tg": "Togo",         "cm": "Cameroun",        "ml": "Mali",
+    "bf": "Burkina Faso", "ne": "Niger",           "gn": "Guinée",
+    "gb": "Royaume-Uni",  "de": "Allemagne",       "us": "États-Unis",
+    "com": "international", "org": "international",
+    "net": "international", "info": "international",
+}
+top_tld     = top_src_global.split(".")[-1].lower() if top_src_global != "N/A" else ""
+top_country = TLD_TO_COUNTRY.get(top_tld, top_tld.upper())
+
+# Build geographic note dynamically based on detected country
+_WEST_AFRICA_TLDS = {"ng", "gh", "tg", "sn", "ci", "cm", "ml", "bf", "ne", "gn"}
+if top_tld in _WEST_AFRICA_TLDS:
+    geo_note = (
+        f"La prédominance de médias <b>{top_country}s</b> ({top_src_global}) reflète "
+        f"la proximité géographique et les liens économiques forts entre le Bénin et ses voisins. "
+        f"La presse régionale ouest-africaine couvre le Bénin plus intensément que les grands "
+        f"médias occidentaux. Ce n'est pas une erreur de filtrage — ces médias couvrent bien le "
+        f"<b>pays Bénin</b>, pas la ville nigériane de Benin City (exclue par le filtre SQL)."
+    )
+    strategy_note = (
+        f"→ Pour améliorer son image internationale, le Bénin doit en priorité engager "
+        f"les grandes rédactions <b>{top_country}s</b> et ouest-africaines."
+    )
+elif top_tld == "bj":
+    geo_note = (
+        f"La source dominante est béninoise ({top_src_global}), ce qui indique que "
+        f"la presse locale assure l'essentiel de la couverture internationale du Bénin. "
+        f"GDELT capte ici la production éditoriale nationale relayée à l'international."
+    )
+    strategy_note = "→ La presse béninoise est bien représentée dans la couverture mondiale."
+elif top_tld in ("com", "org", "net", "info"):
+    geo_note = (
+        f"La source dominante ({top_src_global}) est un agrégateur ou média international, "
+        f"indiquant une couverture diversifiée sans domination d'un seul pays."
+    )
+    strategy_note = "→ La couverture internationale du Bénin est géographiquement équilibrée."
+else:
+    geo_note = (
+        f"La source dominante ({top_src_global}, pays : {top_country}) "
+        f"concentre l'essentiel de la couverture médiatique du Bénin."
+    )
+    strategy_note = f"→ Le Bénin est principalement couvert par les médias {top_country}s."
+
 st.markdown(f"""<div class="insight-box">
     <span class="insight-num">Insight Q4</span> — <b>{crisis_pct:.0f}%</b> des événements
     se déroulent en contexte de crise (ton &lt; −5 ou Goldstein &lt; −5).
-    En période de crise, <b>{top_src_crisis}</b> est la source la plus active.
-    Comparer les deux colonnes révèle si certains médias n'apparaissent qu'en situation d'urgence.
+    En période de crise, <b>{top_src_crisis}</b> est la source la plus active.<br><br>
+    {geo_note}<br><br>
+    <i>{strategy_note}</i>
 </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
@@ -554,6 +634,177 @@ st.markdown(f"""<div class="insight-box">
     <b>Contexte</b> dans <b>{ctx_p:.0f}%</b> des cas (cadre géographique, non initiateur)
     et <b>Acteur</b> dans <b>{actor_p:.0f}%</b> des événements.
     Cela indique une couverture internationale réactive plutôt qu'une diplomatie proactive.
+</div>""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────
+# CORRELATION MATRIX Q1–Q5
+# ─────────────────────────────────────────────────────────────────
+
+st.markdown(
+    '<div class="section-title">Matrice de corrélation — Relations entre les 5 questions</div>',
+    unsafe_allow_html=True
+)
+
+# Build monthly aggregates for each question
+monthly_corr = (
+    df.groupby("event_month", as_index=False)
+    .agg(nb_articles=("NumArticles", "sum"))
+    .sort_values("event_month")
+)
+
+tone_monthly_corr = (
+    df.groupby("event_month", as_index=False)
+    .agg(avg_tone=("AvgTone", "mean"))
+    .sort_values("event_month")
+)
+
+source_diversity = (
+    df.groupby("event_month")["source_domain"]
+    .nunique()
+    .reset_index()
+    .rename(columns={"source_domain": "source_count"})
+)
+
+benin_role_monthly = (
+    df.groupby("event_month")["benin_role"]
+    .apply(lambda x: (x == "Acteur").mean() * 100)
+    .reset_index()
+    .rename(columns={"benin_role": "actor_pct"})
+)
+
+# Assemble correlation dataframe (one row per month)
+corr_df = monthly_corr[["event_month", "nb_articles"]].rename(
+    columns={"nb_articles": "Q1_volume"}
+)
+corr_df = corr_df.merge(
+    tone_monthly_corr[["event_month", "avg_tone"]].rename(columns={"avg_tone": "Q2_tone"}),
+    on="event_month", how="left"
+)
+
+if "propagation_delay_days" in df.columns:
+    delay_monthly_corr = (
+        df.groupby("event_month")["propagation_delay_days"]
+        .mean()   # mean instead of median: median=0 for all months (>50% same-day),
+                  # which gives zero variance and makes Pearson correlation undefined (NaN).
+                  # The mean varies because high-delay events pull it differently each month.
+        .reset_index()
+        .rename(columns={"propagation_delay_days": "Q3_delay"})
+    )
+    corr_df = corr_df.merge(delay_monthly_corr, on="event_month", how="left")
+else:
+    corr_df["Q3_delay"] = float("nan")
+
+corr_df = corr_df.merge(
+    source_diversity.rename(columns={"source_count": "Q4_sources"}),
+    on="event_month", how="left"
+)
+corr_df = corr_df.merge(
+    benin_role_monthly.rename(columns={"actor_pct": "Q5_role"}),
+    on="event_month", how="left"
+)
+
+CORR_COLS   = ["Q1_volume", "Q2_tone", "Q3_delay", "Q4_sources", "Q5_role"]
+CORR_LABELS = ["Q1\nVolume", "Q2\nTon", "Q3\nDélai", "Q4\nSources", "Q5\nRôle"]
+
+corr_matrix = corr_df[CORR_COLS].corr()
+
+col_heatmap, col_insights = st.columns([3, 2])
+
+with col_heatmap:
+    fig_corr = go.Figure(
+        data=go.Heatmap(
+            z=corr_matrix.values,
+            x=CORR_LABELS,
+            y=CORR_LABELS,
+            colorscale="RdBu",
+            zmid=0,
+            zmin=-1,
+            zmax=1,
+            text=corr_matrix.values.round(2),
+            texttemplate="%{text}",
+            textfont={"size": 13, "color": "black"},
+            colorbar=dict(title="Corrélation", thickness=14),
+            hoverongaps=False,
+            hovertemplate="<b>%{y} ↔ %{x}</b><br>r = %{z:.2f}<extra></extra>"
+        )
+    )
+    fig_corr.update_layout(
+        title="Corrélations entre les 5 dimensions d'analyse (agrégées par mois)",
+        title_font_size=13,
+        height=420,
+        margin=dict(t=50, b=10, l=10, r=10),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+    )
+    st.plotly_chart(fig_corr, use_container_width=True, config=CHART_CONFIG)
+
+with col_insights:
+    st.markdown("#### 🔍 Interprétation automatique")
+
+    # Collect all off-diagonal pairs sorted by absolute correlation
+    corr_pairs = []
+    for i in range(len(CORR_COLS)):
+        for j in range(i + 1, len(CORR_COLS)):
+            r = corr_matrix.iloc[i, j]
+            if not (r != r):  # skip NaN
+                corr_pairs.append({
+                    "q1": CORR_COLS[i],
+                    "q2": CORR_COLS[j],
+                    "r": r
+                })
+    corr_pairs.sort(key=lambda x: abs(x["r"]), reverse=True)
+
+    LABEL_MAP = {
+        "Q1_volume":  "Volume médiatique",
+        "Q2_tone":    "Ton médiatique",
+        "Q3_delay":   "Délai de propagation",
+        "Q4_sources": "Diversité des sources",
+        "Q5_role":    "Rôle du Bénin (Acteur %)",
+    }
+
+    for pair in corr_pairs[:5]:
+        r   = pair["r"]
+        l1  = LABEL_MAP[pair["q1"]]
+        l2  = LABEL_MAP[pair["q2"]]
+        tag = pair["q1"].split("_")[0]
+        tag2 = pair["q2"].split("_")[0]
+
+        if r > 0.6:
+            color = "#00b894"
+            icon  = "📈"
+            desc  = f"**corrélation positive forte** ({r:+.2f}) — quand l'un augmente, l'autre aussi."
+        elif r < -0.6:
+            color = "#d63031"
+            icon  = "📉"
+            desc  = f"**corrélation négative forte** ({r:+.2f}) — quand l'un augmente, l'autre baisse."
+        elif r > 0.3:
+            color = "#74b9ff"
+            icon  = "↗️"
+            desc  = f"**corrélation positive modérée** ({r:+.2f})."
+        elif r < -0.3:
+            color = "#fd79a8"
+            icon  = "↘️"
+            desc  = f"**corrélation négative modérée** ({r:+.2f})."
+        else:
+            color = "#b2bec3"
+            icon  = "➡️"
+            desc  = f"**pas de lien significatif** ({r:+.2f})."
+
+        st.markdown(
+            f"<div style='border-left:4px solid {color}; padding:0.5rem 0.8rem; "
+            f"margin:0.4rem 0; background:#f9fafb; border-radius:4px; font-size:0.83rem;'>"
+            f"{icon} <b>{tag} ↔ {tag2}</b> — {l1} / {l2}<br>"
+            f"<span style='color:#374151;'>{desc}</span>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+st.markdown("""<div class="insight-box">
+    <span class="insight-num">Insight Corrélation</span> — Cette matrice révèle les <b>liens systémiques</b>
+    entre les 5 dimensions d'analyse. Une corrélation forte entre Volume (Q1) et Sources (Q4) signifie
+    que les pics de couverture attirent davantage de médias — et non l'inverse.
+    Une corrélation négative entre Ton (Q2) et Volume (Q1) confirmerait que les crises génèrent
+    plus d'articles. Ces relations guident les stratégies de communication des décideurs béninois.
 </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
