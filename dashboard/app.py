@@ -1,7 +1,7 @@
 # dashboard/app.py
 """
 Bénin Insights Challenge 2026 — Interactive Dashboard
-iSHEERO × DataCamp Donates — Équipe 7
+iSHEERO × DataCamp Donates — IROKO Analytics (Équipe 7)
 
 Analytical questions answered:
     Q1 — When does the world talk about Benin?
@@ -103,6 +103,30 @@ st.markdown("""
     font-size: 0.88rem; color: #374151; line-height: 1.5;
 }
 .insight-num { font-weight: 700; color: #7e3af2; }
+.audience-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.7rem;
+    margin-top: 0.8rem;
+}
+.audience-card {
+    border-radius: 8px; padding: 0.7rem 0.9rem;
+    font-size: 0.82rem; line-height: 1.45;
+}
+.audience-card.decideurs {
+    background: #eef2ff; border-left: 3px solid #1a56db;
+}
+.audience-card.journalistes {
+    background: #fef3c7; border-left: 3px solid #f59e0b;
+}
+.audience-card.chercheurs {
+    background: #ecfdf5; border-left: 3px solid #10b981;
+}
+.audience-tag {
+    font-weight: 700; font-size: 0.78rem; text-transform: uppercase;
+    letter-spacing: 0.04em; margin-bottom: 0.3rem;
+}
+.audience-tag.decideurs   { color: #1a56db; }
+.audience-tag.journalistes { color: #b45309; }
+.audience-tag.chercheurs   { color: #059669; }
 .sample-banner {
     background: #fffbeb; border: 1px solid #f59e0b; border-radius: 8px;
     padding: 0.6rem 1rem; font-size: 0.83rem; color: #92400e; margin-bottom: 1rem;
@@ -222,7 +246,7 @@ with st.sidebar:
         selected_events = []
 
     st.markdown("---")
-    st.caption("Bénin Insights Challenge 2026\niSHEERO × DataCamp · Équipe 7\nPipeline v1.3")
+    st.caption("Bénin Insights Challenge 2026\nIROKO Analytics (Équipe 7)\niSHEERO × DataCamp Donates")
 
 # ─────────────────────────────────────────────────────────────────
 # APPLY FILTERS
@@ -294,9 +318,11 @@ with col_q1a:
         line=dict(color="#7e3af2", width=2), marker=dict(size=6),
         hovertemplate="<b>%{x}</b><br>Événements : %{y:,}<extra></extra>"
     ))
+    # Compute y-axis max with padding for text labels
+    _q1_ymax = monthly["nb_articles"].max() * 1.2
     fig_q1.update_layout(
         title="Volume mensuel de couverture médiatique",
-        yaxis=dict(title="Nombre d'articles", gridcolor="#f0f0f0"),
+        yaxis=dict(title="Nombre d'articles", gridcolor="#f0f0f0", range=[0, _q1_ymax]),
         yaxis2=dict(title="Événements", overlaying="y", side="right", showgrid=False),
         plot_bgcolor="white", paper_bgcolor="white",
         legend=dict(orientation="h", y=-0.18),
@@ -372,11 +398,23 @@ if len(peak_month_events) > 0:
         parts = [p for p in [e_actor1, e_actor2] if p != "N/A"]
         actors_line = f"<b>Acteurs</b> : {' ↔ '.join(parts)}<br>"
 
+    # Real-world context for the December peak
+    _context_note = ""
+    if peak_month_idx == 12:
+        _context_note = (
+            "<br><br>"
+            "<b>🔴 Contexte réel</b> : Le 7 décembre 2025, le ministre de l'Intérieur "
+            "<b>Alassane Seidou</b> a officiellement annoncé qu'une <b>tentative de coup d'État</b> "
+            "avait été déjouée au Bénin après une brève occupation de la télévision nationale. "
+            "Cet événement explique le pic massif de couverture et le ton très négatif du mois."
+        )
+
     insight_q1 = f"""<div class="insight-box">
         <span class="insight-num">Insight Q1</span> — Le mois de <b>{peak_month}</b> concentre
         le plus grand nombre d'articles publiés au monde (<b>{peak_val:,}</b> au total),
         soit près du double de la moyenne mensuelle. Ce pic révèle une intensification
         de l'attention internationale sur le Bénin.
+        {_context_note}
         <br><br>
         <b>Événement déclencheur</b> : <b>{event_label}</b> — {event_date} —
         <b>{event_articles:,} articles</b><br>
@@ -385,12 +423,26 @@ if len(peak_month_events) > 0:
         <b>Intensité géopolitique</b> (Goldstein) : {e_gold} &nbsp;|&nbsp;
         <b>Ton médiatique</b> : {e_tone}<br>
         <b>Source dominante</b> : {e_source}
-        <br><br>
-        → <b>Recommandation</b> : Les décideurs béninois doivent mettre en place
-        un dispositif de veille médiatique internationale permanent. L'analyse montre
-        que les pics de couverture sont liés à des événements diplomatiques (CEDEAO, acteurs
-        régionaux) et sécuritaires — des sujets sur lesquels une communication proactive
-        peut réduire l'impact négatif.
+        <div class="audience-grid">
+            <div class="audience-card decideurs">
+                <div class="audience-tag decideurs">🏛️ Décideurs</div>
+                Mettre en place un <b>dispositif de veille médiatique</b> permanent.
+                Les pics sont liés aux événements diplomatiques (CEDEAO) et sécuritaires —
+                une communication proactive peut réduire l'impact négatif.
+            </div>
+            <div class="audience-card journalistes">
+                <div class="audience-tag journalistes">📰 Journalistes</div>
+                <b>Angle éditorial</b> : Pourquoi {peak_month} ? Investiguer les événements
+                de type <b>{event_label}</b> qui déclenchent l'attention mondiale.
+                Les médias nigérians couvrent le Bénin plus que les médias occidentaux — un sujet en soi.
+            </div>
+            <div class="audience-card chercheurs">
+                <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+                <b>Hypothèse</b> : Les pics de couverture suivent-ils un modèle saisonnier
+                ou sont-ils purement événementiels ? Analyser la corrélation entre
+                calendrier politique régional (sommets CEDEAO/UA) et volume médiatique.
+            </div>
+        </div>
     </div>"""
 else:
     insight_q1 = f"""<div class="insight-box">
@@ -425,36 +477,44 @@ with col_q2a:
     st.plotly_chart(fig_pie, use_container_width=True, config=CHART_CONFIG)
 
 with col_q2b:
+    # Stacked bar: distribution Positif / Neutre / Négatif per month
     tone_m = (
+        df.groupby(["event_month", "tone_category"], as_index=False)
+        .size()
+        .rename(columns={"size": "count"})
+        .sort_values("event_month")
+    )
+    tone_m["month_label"] = tone_m["event_month"].map(MONTH_LABELS)
+
+    fig_tone = go.Figure()
+    for tone_cat in ["Positif", "Neutre", "Négatif"]:
+        subset = tone_m[tone_m["tone_category"] == tone_cat]
+        fig_tone.add_trace(go.Bar(
+            x=subset["month_label"], y=subset["count"],
+            name=tone_cat,
+            marker_color=TONE_COLORS.get(tone_cat, "#aaa"),
+            hovertemplate="<b>%{x}</b><br>" + tone_cat + " : %{y:,}<extra></extra>"
+        ))
+    fig_tone.update_layout(
+        title="Répartition du ton médiatique par mois",
+        barmode="stack",
+        yaxis=dict(title="Nombre d'événements", gridcolor="#f0f0f0"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        height=330, margin=dict(t=50, b=10),
+        legend=dict(orientation="h", y=-0.18)
+    )
+    st.plotly_chart(fig_tone, use_container_width=True, config=CHART_CONFIG)
+
+    # Keep avg_tone per month for insight text
+    tone_m_avg = (
         df.groupby("event_month", as_index=False)
         .agg(avg_tone=("AvgTone", "mean"))
         .sort_values("event_month")
     )
-    tone_m["month_label"] = tone_m["event_month"].map(MONTH_LABELS)
-    tone_m["color"] = tone_m["avg_tone"].apply(
-        lambda v: "#d63031" if v < -2 else ("#00b894" if v > 2 else "#fdcb6e")
-    )
-    fig_tone = go.Figure()
-    fig_tone.add_trace(go.Bar(
-        x=tone_m["month_label"], y=tone_m["avg_tone"].round(2),
-        marker_color=tone_m["color"],
-        hovertemplate="<b>%{x}</b><br>Ton moyen : %{y:.2f}<extra></extra>"
-    ))
-    fig_tone.add_hline(y=2,  line_dash="dot", line_color="#00b894",
-                       annotation_text="Seuil positif (+2)")
-    fig_tone.add_hline(y=-2, line_dash="dot", line_color="#d63031",
-                       annotation_text="Seuil négatif (−2)")
-    fig_tone.add_hline(y=0,  line_dash="dash", line_color="gray")
-    fig_tone.update_layout(
-        title="Ton médiatique moyen par mois (AvgTone GDELT)",
-        yaxis=dict(title="Ton moyen", gridcolor="#f0f0f0"),
-        plot_bgcolor="white", paper_bgcolor="white",
-        height=330, margin=dict(t=50, b=10), showlegend=False
-    )
-    st.plotly_chart(fig_tone, use_container_width=True, config=CHART_CONFIG)
+    tone_m_avg["month_label"] = tone_m_avg["event_month"].map(MONTH_LABELS)
 
 neg_pct_total  = (df["tone_category"] == "Négatif").mean() * 100
-most_neg_month = tone_m.loc[tone_m["avg_tone"].idxmin(), "month_label"]
+most_neg_month = tone_m_avg.loc[tone_m_avg["avg_tone"].idxmin(), "month_label"]
 # Determine positive %
 pos_pct_total = (df["tone_category"] == "Positif").mean() * 100
 neu_pct_total = (df["tone_category"] == "Neutre").mean() * 100
@@ -464,18 +524,31 @@ gold_mean_val = df["GoldsteinScale"].mean()
 st.markdown(f"""<div class="insight-box">
     <span class="insight-num">Insight Q2</span> — <b>{neg_pct_total:.0f}%</b> des événements
     ont un ton négatif, contre <b>{pos_pct_total:.0f}%</b> positif et <b>{neu_pct_total:.0f}%</b> neutre.
-    Le ton moyen global est de <b>{avg_tone_val:+.2f}</b> (négatif < 0 < positif), confirmant
+    Le ton moyen global est de <b>{avg_tone_val:+.2f}</b> (négatif &lt; 0 &lt; positif), confirmant
     que l'image internationale du Bénin est dominée par les tensions et les crises.
-    <br><br>
-    Le mois de <b>{most_neg_month}</b> enregistre le ton le plus bas de l'année,
-    corrélé aux événements sécuritaires et aux déclarations diplomatiques de la CEDEAO.
-    L'échelle de Goldstein (impact sur la stabilité nationale) est en moyenne à <b>{gold_mean_val:+.2f}</b>,
-    ce qui reste légèrement positif — indiquant que les événements de coopération compensent
-    les crises en volume.
-    <br><br>
-    → <b>Recommandation</b> : Le Bénin devrait systématiquement accompagner les événements
-    de crise d'une communication institutionnelle positive (coopération économique,
-    progrès sociaux) pour rééquilibrer son image médiatique.
+    Le mois de <b>{most_neg_month}</b> enregistre le ton le plus bas de l'année.
+    L'échelle de Goldstein est en moyenne à <b>{gold_mean_val:+.2f}</b>.
+    <div class="audience-grid">
+        <div class="audience-card decideurs">
+            <div class="audience-tag decideurs">🏛️ Décideurs</div>
+            Accompagner systématiquement les crises d'une <b>communication positive</b>
+            (coopération économique, progrès sociaux) pour rééquilibrer l'image.
+            Cibler les mois à ton négatif pour des contre-narratifs.
+        </div>
+        <div class="audience-card journalistes">
+            <div class="audience-tag journalistes">📰 Journalistes</div>
+            <b>Angle</b> : Le ton négatif dominant ({neg_pct_total:.0f}%) reflète-t-il
+            la réalité ou un <b>biais éditorial</b> des médias internationaux ?
+            Comparer avec le ton des pays voisins (Togo, Ghana) pour mesurer ce biais.
+        </div>
+        <div class="audience-card chercheurs">
+            <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+            <b>Piste</b> : Étudier la relation entre le score Goldstein ({gold_mean_val:+.2f})
+            et AvgTone ({avg_tone_val:+.2f}). La divergence suggère que la stabilité
+            géopolitique réelle diffère de la perception médiatique — un cas d'étude
+            en <i>framing theory</i>.
+        </div>
+    </div>
 </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
@@ -537,17 +610,28 @@ if "propagation_delay_days" in df.columns:
     st.markdown(f"""<div class="insight-box">
         <span class="insight-num">Insight Q3</span> — <b>{fast_pct:.0f}%</b> des événements
         béninois sont indexés en moins de 24 heures. Délai médian : <b>{med_delay:.0f} jour(s)</b>.
-        Cela signifie que la couverture mondiale est <b>quasi instantanée</b> : un événement
+        La couverture mondiale est <b>quasi instantanée</b> : un événement
         survenant à Cotonou ou Porto-Novo est visible dans les médias internationaux le jour même.
-        <br><br>
-        Cette réactivité a une conséquence majeure : les responsables béninois ne disposent
-        d'aucune fenêtre de temps pour préparer une réponse avant que l'information
-        ne soit diffusée mondialement. GDELT peut servir d'outil de veille en temps réel
-        pour anticiper les réactions internationales.
-        <br><br>
-        → <b>Recommandation</b> : Mettre en place une cellule de veille GDELT automatisée
-        qui alerte les communicants gouvernementaux dès qu'un événement béninois
-        dépasse un seuil de couverture critique.
+        <div class="audience-grid">
+            <div class="audience-card decideurs">
+                <div class="audience-tag decideurs">🏛️ Décideurs</div>
+                Mettre en place une <b>cellule de veille GDELT automatisée</b>
+                qui alerte dès qu'un événement béninois dépasse un seuil critique.
+                Aucune fenêtre de temps n'existe pour préparer une réponse.
+            </div>
+            <div class="audience-card journalistes">
+                <div class="audience-tag journalistes">📰 Journalistes</div>
+                <b>Outil</b> : GDELT peut servir de <b>système d'alerte</b> pour les rédactions.
+                {fast_pct:.0f}% des événements sont indexés en &lt;24h —
+                idéal pour du fact-checking en temps réel et la détection de breaking news.
+            </div>
+            <div class="audience-card chercheurs">
+                <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+                <b>Question</b> : Le délai de propagation varie-t-il selon le <b>type d'événement</b>
+                (conflit vs coopération) ou la <b>source</b> (presse locale vs internationale) ?
+                Étudier l'effet de la langue de publication sur la vitesse de diffusion.
+            </div>
+        </div>
     </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
@@ -568,10 +652,13 @@ def src_fig(data, title, color):
         title=title, color_discrete_sequence=[color], text="Occurrences"
     )
     fig.update_traces(textposition="outside")
+    # Get max value to set proper xaxis range
+    max_val = src["Occurrences"].max() if len(src) > 0 else 100
     fig.update_layout(
         plot_bgcolor="white", height=340,
-        margin=dict(t=50, b=10), showlegend=False,
-        yaxis=dict(autorange="reversed")
+        margin=dict(t=50, b=10, r=10), showlegend=False,
+        yaxis=dict(autorange="reversed"),
+        xaxis=dict(range=[0, max_val * 1.4])  # 40% padding for text
     )
     return fig
 
@@ -696,16 +783,30 @@ st.markdown(f"""<div class="insight-box">
     <span class="insight-num">Insight Q4</span> — <b>{crisis_pct:.0f}%</b> des événements
     se déroulent en contexte de crise (ton &lt; −5 ou Goldstein &lt; −5).
     En période de crise, <b>{top_src_crisis}</b> est la source la plus active
-    ({n_src_crisis} sources uniques en crise contre {n_src_normal} en période normale).<br><br>
-    {geo_note}<br><br>
-    <b>Fait marquant</b> : 7 des 10 premières sources sont nigérianes (.ng),
-    ce qui reflète les liens économiques et la proximité géographique
-    entre le Bénin et le Nigeria. Ce n'est pas une anomalie de filtrage —
-    le pipeline exclut explicitement les événements de Benin City (Nigeria).<br><br>
-    {crisis_only_note}<br><br>
-    → <b>Recommandation</b> : {strategy_note.replace('→ ', '')}
-    La presse béninoise (lanouvelletribune.info) est la 6ᵉ source — renforcer
-    sa visibilité internationale permettrait de diversifier la couverture.
+    ({n_src_crisis} sources uniques en crise contre {n_src_normal} en période normale).<br>
+    {geo_note}<br>
+    {crisis_only_note}
+    <div class="audience-grid">
+        <div class="audience-card decideurs">
+            <div class="audience-tag decideurs">🏛️ Décideurs</div>
+            {strategy_note.replace('→ ', '')}
+            Renforcer la visibilité internationale de la <b>presse béninoise</b>
+            pour diversifier la couverture et réduire la dépendance aux médias étrangers.
+        </div>
+        <div class="audience-card journalistes">
+            <div class="audience-tag journalistes">📰 Journalistes</div>
+            <b>Enquête</b> : Pourquoi 7/10 des sources sont nigérianes ?
+            Investiguer l'<b>écosystème médiatique régional</b> et le rôle
+            de la proximité géographique dans la couverture du Bénin.
+            La presse béninoise est sous-représentée internationalement.
+        </div>
+        <div class="audience-card chercheurs">
+            <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+            <b>Méthodologie</b> : Appliquer l'analyse de réseau (<i>network analysis</i>)
+            aux flux d'information entre sources pour cartographier les
+            <b>gatekeepers médiatiques</b> du Bénin. Comparer périodes normale/crise.
+        </div>
+    </div>
 </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
@@ -783,23 +884,29 @@ top_evt_str = ", ".join(
 
 st.markdown(f"""<div class="insight-box">
     <span class="insight-num">Insight Q5</span> — Le Bénin est en position
-    <b>Contexte</b> dans <b>{ctx_p:.0f}%</b> des cas (cadre géographique, non initiateur),
-    <b>Acteur</b> dans <b>{actor_p:.0f}%</b>, <b>Spectateur</b> (cible) dans <b>{spec_p:.0f}%</b>,
-    et <b>Mixte</b> (acteur et cible) dans <b>{mixte_p:.1f}%</b>.
-    <br><br>
-    Quand le Bénin est acteur, les institutions les plus visibles sont :
-    <b>{top_actor_str}</b>.
-    Les actions initiées sont principalement : <b>{top_evt_str}</b>.
-    <br><br>
-    La prédominance du rôle "Contexte" signifie que le Bénin est surtout
-    un <b>terrain d'événements</b> plutôt qu'un acteur géopolitique proactif.
-    Les événements de coopération régionale (CEDEAO) et les interactions
-    avec le Nigeria dominent quand le Bénin est acteur.
-    <br><br>
-    → <b>Recommandation</b> : Pour augmenter sa proportion d'événements en tant qu'acteur,
-    le Bénin devrait multiplier les initiatives diplomatiques visibles
-    (sommets, accords bilatéraux, prises de position à l'ONU/UA/CEDEAO)
-    et renforcer sa communication institutionnelle lors de ces événements.
+    <b>Contexte</b> dans <b>{ctx_p:.0f}%</b> des cas, <b>Acteur</b> dans <b>{actor_p:.0f}%</b>,
+    <b>Spectateur</b> dans <b>{spec_p:.0f}%</b>, et <b>Mixte</b> dans <b>{mixte_p:.1f}%</b>.
+    Quand le Bénin est acteur : <b>{top_actor_str}</b>. Actions : <b>{top_evt_str}</b>.
+    <div class="audience-grid">
+        <div class="audience-card decideurs">
+            <div class="audience-tag decideurs">🏛️ Décideurs</div>
+            Pour augmenter la proportion "Acteur", multiplier les
+            <b>initiatives diplomatiques visibles</b> (sommets, accords bilatéraux,
+            prises de position à l'ONU/UA/CEDEAO) et communiquer activement.
+        </div>
+        <div class="audience-card journalistes">
+            <div class="audience-tag journalistes">📰 Journalistes</div>
+            <b>Récit</b> : Le Bénin est surtout un <b>terrain d'événements</b> ({ctx_p:.0f}%)
+            plutôt qu'un acteur. Quel impact sur la <b>souveraineté narrative</b>
+            du pays ? Qui parle à la place du Bénin dans les médias mondiaux ?
+        </div>
+        <div class="audience-card chercheurs">
+            <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+            <b>Cadre théorique</b> : Appliquer le concept de <i>media agency</i> —
+            un pays "Contexte" subit sa représentation. Comparer le ratio
+            Acteur/Contexte du Bénin avec d'autres pays ouest-africains.
+        </div>
+    </div>
 </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
@@ -858,16 +965,27 @@ st.markdown(f"""<div class="insight-box">
     <b>{len(hidden):,} événements</b> très négatifs (Goldstein ≤ −5) mais faiblement
     couverts (1 à 5 articles seulement).
     <b>{hidden_pct:.0f}%</b> d'entre eux se produisent au Bénin.
-    <br><br>
-    <b>Types d'événements cachés</b> : {top_hidden_str}.
-    Ces événements représentent des situations graves (violences, assauts, attentats)
-    qui n'ont pas encore attiré l'attention des grands médias, mais qui pourraient
-    devenir des crises médiatiques à tout moment si un média international les reprend.
-    <br><br>
-    → <b>Recommandation</b> : Ces événements sous-couverts méritent une veille
-    prioritaire. Les autorités béninaises devraient anticiper leur médiatisation
-    potentielle en préparant des éléments de communication proactifs
-    sur les sujets de sécurité et de droits humains.
+    Types cachés : {top_hidden_str}.
+    <div class="audience-grid">
+        <div class="audience-card decideurs">
+            <div class="audience-tag decideurs">🏛️ Décideurs</div>
+            Ces événements sous-couverts méritent une <b>veille prioritaire</b>.
+            Anticiper leur médiatisation potentielle en préparant des
+            éléments de communication proactifs sur la sécurité et les droits humains.
+        </div>
+        <div class="audience-card journalistes">
+            <div class="audience-tag journalistes">📰 Journalistes</div>
+            <b>Exclusivité</b> : {len(hidden):,} événements graves non couverts par les
+            grands médias. Ce sont des <b>sujets d'enquête</b> potentiels —
+            violences et tensions ignorées par la presse internationale.
+        </div>
+        <div class="audience-card chercheurs">
+            <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+            <b>Phénomène</b> : Pourquoi certains événements graves restent invisibles ?
+            Étudier les facteurs d'<i>agenda-setting</i> et de <i>gatekeeping</i>
+            qui déterminent la couverture médiatique internationale du Bénin.
+        </div>
+    </div>
 </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
@@ -1058,19 +1176,359 @@ else:
 
 st.markdown(f"""<div class="insight-box">
     <span class="insight-num">Insight Corrélation</span> — Cette matrice révèle les <b>liens systémiques</b>
-    entre les 5 dimensions d'analyse.<br><br>
-    {dynamic_corr_note}<br><br>
-    <b>Interprétation pour les décideurs</b> : si Volume (Q1) et Sources (Q4)
-    sont fortement corrélés, cela signifie que les pics de couverture
-    mobilisent davantage de médias — effet boule de neige médiatique.
-    Si Ton (Q2) et Volume (Q1) sont inversement corrélés, les crises
-    génèrent plus d'articles : plus le sujet est grave, plus il est couvert.
-    <br><br>
-    → <b>Recommandation</b> : Ces corrélations doivent guider le timing
-    des communications institutionnelles. Communiquer positivement
-    pendant les périodes de faible volume médiatique maximise l'impact
-    sans être noyé par les crises.
+    entre les 5 dimensions d'analyse.<br>
+    {dynamic_corr_note}
+    <div class="audience-grid">
+        <div class="audience-card decideurs">
+            <div class="audience-tag decideurs">🏛️ Décideurs</div>
+            Ces corrélations guident le <b>timing des communications</b>.
+            Communiquer positivement pendant les périodes de faible
+            volume médiatique maximise l'impact sans être noyé par les crises.
+        </div>
+        <div class="audience-card journalistes">
+            <div class="audience-tag journalistes">📰 Journalistes</div>
+            <b>Data-journalisme</b> : Ces corrélations permettent de
+            <b>prédire</b> quand un sujet béninois va exploser médiatiquement.
+            L'effet boule de neige (Volume ↔ Sources) est un signal d'alerte.
+        </div>
+        <div class="audience-card chercheurs">
+            <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+            <b>Modélisation</b> : Ces corrélations mensuelles valident
+            un modèle de <i>media cascade</i> pour le Bénin.
+            Tester avec des données journalières pour affiner la granularité.
+        </div>
+    </div>
 </div>""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────
+# NEW — GEOGRAPHIC MAP OF MEDIA COVERAGE
+# ─────────────────────────────────────────────────────────────────
+
+if "ActionGeo_Lat" in df.columns and "ActionGeo_Long" in df.columns:
+    st.markdown(
+        '<div class="section-title">🗺️ Carte géographique — Couverture médiatique mondiale du Bénin</div>',
+        unsafe_allow_html=True
+    )
+
+    geo_df = df.dropna(subset=["ActionGeo_Lat", "ActionGeo_Long"]).copy()
+    geo_df = geo_df[
+        (geo_df["ActionGeo_Lat"].between(-90, 90)) &
+        (geo_df["ActionGeo_Long"].between(-180, 180))
+    ]
+
+    if len(geo_df) > 0:
+        # Aggregate by country for choropleth
+        country_agg = (
+            geo_df.groupby("ActionGeo_CountryCode", as_index=False)
+            .agg(
+                events=("SQLDATE", "count"),
+                articles=("NumArticles", "sum"),
+                avg_tone=("AvgTone", "mean")
+            )
+            .sort_values("events", ascending=False)
+        )
+
+        col_map, col_map_info = st.columns([3, 1])
+        with col_map:
+            # Scatter geo map with bubble sizes
+            geo_agg = (
+                geo_df.groupby(
+                    ["ActionGeo_FullName", "ActionGeo_Lat", "ActionGeo_Long", "ActionGeo_CountryCode"],
+                    as_index=False
+                )
+                .agg(events=("SQLDATE", "count"), articles=("NumArticles", "sum"))
+                .sort_values("events", ascending=False)
+                .head(100)  # Top 100 locations for performance
+            )
+
+            fig_map = px.scatter_geo(
+                geo_agg,
+                lat="ActionGeo_Lat",
+                lon="ActionGeo_Long",
+                size="events",
+                color="events",
+                hover_name="ActionGeo_FullName",
+                hover_data={"articles": ":,", "events": ":,", "ActionGeo_Lat": False, "ActionGeo_Long": False},
+                color_continuous_scale="YlOrRd",
+                size_max=30,
+                title="Localisation des événements médiatiques liés au Bénin",
+                projection="natural earth"
+            )
+            fig_map.update_layout(
+                height=500,
+                margin=dict(t=50, b=10, l=0, r=0),
+                coloraxis_colorbar=dict(title="Événements"),
+                geo=dict(
+                    showland=True, landcolor="#f0f0f0",
+                    showocean=True, oceancolor="#e8f4f8",
+                    showcountries=True, countrycolor="#d0d0d0",
+                    showframe=False
+                )
+            )
+            st.plotly_chart(fig_map, use_container_width=True, config=CHART_CONFIG)
+
+        with col_map_info:
+            st.markdown("#### 🌍 Top pays couverts")
+            # Full country names for readability
+            COUNTRY_NAMES = {
+                "BN": "Bénin", "NI": "Nigeria", "NG": "Nigeria",
+                "FR": "France", "GH": "Ghana", "TO": "Togo",
+                "US": "États-Unis", "UK": "Royaume-Uni", "GB": "Royaume-Uni",
+                "CH": "Chine", "CI": "Côte d'Ivoire", "SN": "Sénégal",
+                "UV": "Burkina Faso", "DE": "Allemagne", "CA": "Canada",
+                "SF": "Afrique du Sud", "ZA": "Afrique du Sud",
+                "CM": "Cameroun", "ML": "Mali", "NE": "Niger",
+                "IN": "Inde", "BR": "Brésil", "JP": "Japon",
+                "BE": "Belgique", "IT": "Italie", "ES": "Espagne",
+            }
+            top_countries = country_agg.head(10)
+            for _, row in top_countries.iterrows():
+                cc = row["ActionGeo_CountryCode"]
+                name = COUNTRY_NAMES.get(cc, cc)
+                ev = int(row["events"])
+                tone_val = row["avg_tone"]
+                tone_icon = "🟢" if tone_val > 0 else "🔴"
+                st.markdown(
+                    f"**{name}** — {ev:,} év. {tone_icon} ({tone_val:+.1f})"
+                )
+
+        # Timeline: cumulative daily events showing how coverage spreads
+        st.markdown("##### ⏳ Propagation de la couverture médiatique dans le temps")
+
+        geo_df["event_date"] = pd.to_datetime(geo_df["SQLDATE"], errors="coerce")
+        daily_coverage = (
+            geo_df.dropna(subset=["event_date"])
+            .groupby("event_date", as_index=False)
+            .agg(
+                events=("GLOBALEVENTID", "count"),
+                countries=("ActionGeo_CountryCode", "nunique"),
+                sources=("source_domain", "nunique"),
+                articles=("NumArticles", "sum")
+            )
+            .sort_values("event_date")
+        )
+        daily_coverage["cumul_events"] = daily_coverage["events"].cumsum()
+        daily_coverage["cumul_countries"] = daily_coverage["countries"].cummax()
+
+        fig_timeline = make_subplots(
+            rows=2, cols=1, shared_xaxes=True,
+            row_heights=[0.6, 0.4],
+            subplot_titles=(
+                "Événements par jour (volume brut)",
+                "Nombre de pays couverts par jour"
+            ),
+            vertical_spacing=0.12
+        )
+
+        fig_timeline.add_trace(
+            go.Bar(
+                x=daily_coverage["event_date"],
+                y=daily_coverage["events"],
+                marker_color="#1a56db",
+                name="Événements/jour",
+                hovertemplate="<b>%{x|%d %b %Y}</b><br>%{y} événements<extra></extra>"
+            ), row=1, col=1
+        )
+
+        fig_timeline.add_trace(
+            go.Scatter(
+                x=daily_coverage["event_date"],
+                y=daily_coverage["countries"],
+                mode="lines+markers",
+                marker=dict(size=3, color="#7e3af2"),
+                line=dict(color="#7e3af2", width=1.5),
+                name="Pays touchés/jour",
+                hovertemplate="<b>%{x|%d %b %Y}</b><br>%{y} pays<extra></extra>"
+            ), row=2, col=1
+        )
+
+        fig_timeline.update_layout(
+            height=450,
+            plot_bgcolor="white", paper_bgcolor="white",
+            margin=dict(t=50, b=10),
+            showlegend=False
+        )
+        fig_timeline.update_xaxes(gridcolor="#f0f0f0")
+        fig_timeline.update_yaxes(gridcolor="#f0f0f0")
+        st.plotly_chart(fig_timeline, use_container_width=True, config=CHART_CONFIG)
+
+        st.markdown(f"""<div class="insight-box">
+            <span class="insight-num">Insight Géo</span> — La couverture médiatique du Bénin
+            est concentrée dans <b>{len(country_agg)} pays</b>.
+            Les 3 premiers pays ({', '.join(country_agg['ActionGeo_CountryCode'].head(3).tolist())})
+            représentent la majorité des événements.
+            <div class="audience-grid">
+                <div class="audience-card decideurs">
+                    <div class="audience-tag decideurs">🏛️ Décideurs</div>
+                    La carte révèle les <b>zones de couverture</b> les plus denses.
+                    Cibler la communication vers les pays qui couvrent le plus le Bénin.
+                </div>
+                <div class="audience-card journalistes">
+                    <div class="audience-tag journalistes">📰 Journalistes</div>
+                    <b>Géographie de l'information</b> : d'où viennent les événements couverts ?
+                    Les zones blanches sont des <b>angles morts médiatiques</b> à explorer.
+                </div>
+                <div class="audience-card chercheurs">
+                    <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+                    <b>Analyse spatiale</b> : la couverture suit-elle les flux économiques,
+                    les diasporas ou les alliances géopolitiques ?
+                </div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────
+# NEW — DOMINANT TOPICS FOR JOURNALISTS
+# ─────────────────────────────────────────────────────────────────
+
+if "event_root_label" in df.columns:
+    st.markdown(
+        '<div class="section-title">📰 Sujets dominants — Thématiques clés pour les journalistes</div>',
+        unsafe_allow_html=True
+    )
+
+    col_topics1, col_topics2 = st.columns(2)
+
+    with col_topics1:
+        # Top subjects per month (heatmap)
+        topic_month = (
+            df.groupby(["event_month", "event_root_label"], as_index=False)
+            .size()
+            .rename(columns={"size": "count"})
+        )
+        top_topics = df["event_root_label"].value_counts().head(8).index.tolist()
+        topic_month = topic_month[topic_month["event_root_label"].isin(top_topics)]
+        topic_pivot = topic_month.pivot_table(
+            index="event_root_label", columns="event_month", values="count", fill_value=0
+        )
+        topic_pivot.columns = [MONTH_LABELS.get(m, str(m)) for m in topic_pivot.columns]
+
+        fig_heatmap = go.Figure(data=go.Heatmap(
+            z=topic_pivot.values,
+            x=topic_pivot.columns.tolist(),
+            y=topic_pivot.index.tolist(),
+            colorscale="YlOrRd",
+            hoverongaps=False,
+            hovertemplate="<b>%{y}</b><br>%{x}<br>%{z} événements<extra></extra>"
+        ))
+        fig_heatmap.update_layout(
+            title="Heatmap — Sujets dominants par mois",
+            height=380, margin=dict(t=50, b=10),
+            plot_bgcolor="white", paper_bgcolor="white",
+            xaxis=dict(tickangle=-45)
+        )
+        st.plotly_chart(fig_heatmap, use_container_width=True, config=CHART_CONFIG)
+
+    with col_topics2:
+        # Emerging/trending topics: month-over-month growth
+        topic_growth = (
+            df.groupby(["event_month", "event_root_label"], as_index=False)
+            .size()
+            .rename(columns={"size": "count"})
+        )
+        # Compare last month to previous
+        last_month = df["event_month"].max()
+        prev_month = last_month - 1 if last_month > 1 else 1
+
+        last_topics = topic_growth[topic_growth["event_month"] == last_month].set_index("event_root_label")["count"]
+        prev_topics = topic_growth[topic_growth["event_month"] == prev_month].set_index("event_root_label")["count"]
+
+        growth_df = pd.DataFrame({
+            "last": last_topics,
+            "prev": prev_topics
+        }).fillna(0)
+        growth_df["change"] = growth_df["last"] - growth_df["prev"]
+        growth_df["pct_change"] = (growth_df["change"] / growth_df["prev"].replace(0, 1) * 100).round(0)
+        growth_df = growth_df.sort_values("change", ascending=True).tail(10).reset_index()
+        growth_df.columns = ["Sujet", "Dernier mois", "Mois précédent", "Variation", "Variation %"]
+
+        colors = ["#d63031" if v < 0 else "#00b894" for v in growth_df["Variation"]]
+        fig_growth = go.Figure(go.Bar(
+            x=growth_df["Variation"],
+            y=growth_df["Sujet"],
+            orientation="h",
+            marker_color=colors,
+            text=growth_df["Variation"].apply(lambda v: f"{v:+.0f}"),
+            textposition="outside",
+            hovertemplate="<b>%{y}</b><br>Variation : %{x:+,}<extra></extra>"
+        ))
+        last_month_name = MONTH_LABELS.get(int(last_month), str(last_month))
+        prev_month_name = MONTH_LABELS.get(int(prev_month), str(prev_month))
+        fig_growth.update_layout(
+            title=f"Sujets émergents ({prev_month_name} → {last_month_name})",
+            height=380, margin=dict(t=50, b=10, r=50),
+            plot_bgcolor="white", paper_bgcolor="white",
+            xaxis=dict(title="Variation (événements)"),
+            showlegend=False
+        )
+        st.plotly_chart(fig_growth, use_container_width=True, config=CHART_CONFIG)
+
+    # Under-covered topics (many events, few articles)
+    topic_coverage = (
+        df.groupby("event_root_label", as_index=False)
+        .agg(events=("SQLDATE", "count"), articles=("NumArticles", "sum"))
+    )
+    topic_coverage["articles_per_event"] = (topic_coverage["articles"] / topic_coverage["events"]).round(1)
+    under_covered = topic_coverage[topic_coverage["events"] >= 50].nsmallest(5, "articles_per_event")
+    under_str = ", ".join(
+        [f"**{r['event_root_label']}** ({r['articles_per_event']:.1f} art/év)" for _, r in under_covered.iterrows()]
+    ) if len(under_covered) > 0 else "N/A"
+
+    top_subject = df["event_root_label"].value_counts().head(1)
+    top_name = top_subject.index[0] if len(top_subject) > 0 else "N/A"
+    top_count = int(top_subject.values[0]) if len(top_subject) > 0 else 0
+
+    # Glossary of GDELT event types for clarity
+    EVENT_GLOSSARY = {
+        "Consultation": "discussions diplomatiques, négociations, réunions formelles entre États",
+        "Déclaration publique": "annonces officielles, discours, communiqués de presse",
+        "Engagement / Soutien": "aide, coopération, accords, partenariats",
+        "Appel": "demandes publiques, appels à l'action, requêtes diplomatiques",
+        "Violence de masse": "conflits armés, attaques, violences collectives",
+        "Expression d'intention": "intentions déclarées de coopérer, de négocier ou d'agir",
+        "Désapprobation": "critiques, condamnations, réprobations officielles",
+        "Assaut": "attaques physiques, agressions, opérations militaires",
+        "Protestation": "manifestations, grèves, mouvements sociaux",
+        "Menace": "menaces verbales, intimidations, avertissements",
+        "Aide matérielle": "dons, aide humanitaire, fourniture de matériel",
+        "Attentat": "attentats à la bombe, actes terroristes",
+    }
+    top_glossary = EVENT_GLOSSARY.get(top_name, "")
+    top_explain = f" (<i>{top_glossary}</i>)" if top_glossary else ""
+
+    st.markdown(f"""<div class="insight-box">
+        <span class="insight-num">Insight Sujets</span> — Le sujet dominant est
+        <b>{top_name}</b>{top_explain} avec {top_count:,} événements.
+        Les sujets les moins couverts proportionnellement : {under_str}.
+        <br><br>
+        <b>📚 Glossaire des types d'événements GDELT</b> :<br>
+        <small>
+        • <b>Consultation</b> = discussions diplomatiques, négociations, réunions entre États<br>
+        • <b>Déclaration publique</b> = annonces officielles, discours, communiqués<br>
+        • <b>Engagement / Soutien</b> = aide, coopération, accords, partenariats<br>
+        • <b>Violence de masse</b> = conflits armés, violences collectives<br>
+        • <b>Assaut</b> = attaques physiques, opérations militaires<br>
+        • <b>Désapprobation</b> = critiques, condamnations officielles<br>
+        • <b>Protestation</b> = manifestations, grèves, mouvements sociaux
+        </small>
+        <div class="audience-grid">
+            <div class="audience-card decideurs">
+                <div class="audience-tag decideurs">🏛️ Décideurs</div>
+                La heatmap révèle la <b>saisonnalité thématique</b> : certains sujets
+                culminent à des mois précis. Utile pour planifier les réponses institutionnelles.
+            </div>
+            <div class="audience-card journalistes">
+                <div class="audience-tag journalistes">📰 Journalistes</div>
+                <b>Sujets émergents</b> : le graphique de droite montre les thèmes en
+                <b>forte hausse</b> ce mois — des angles d'actualité à investiguer.
+                Les sujets sous-couverts sont des <b>exclusivités potentielles</b>.
+            </div>
+            <div class="audience-card chercheurs">
+                <div class="audience-tag chercheurs">🔬 Chercheurs</div>
+                <b>Topic modeling</b> : la heatmap valide l'existence de cycles thématiques.
+                Appliquer LDA ou BERTopic sur les titres d'articles pour affiner la classification.
+            </div>
+        </div>
+    </div>""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────
 # BONUS — GEOGRAPHIC BREAKDOWN (if available)
@@ -1106,8 +1564,9 @@ if "event_department" in df.columns:
 st.markdown("---")
 st.markdown(
     "<center style='color:#9ca3af; font-size:0.8rem;'>"
-    "Bénin Insights Challenge 2026 · iSHEERO × DataCamp Donates · Équipe 7 · "
+    "Bénin Insights Challenge 2026 · IROKO Analytics (Équipe 7) · iSHEERO × DataCamp Donates · "
     "Données : GDELT Project (gdelt-bq.gdeltv2.events) · Période : Jan–Déc 2025"
     "</center>",
     unsafe_allow_html=True
 )
+

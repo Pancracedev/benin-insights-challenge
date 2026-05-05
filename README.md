@@ -1,6 +1,6 @@
-# Bénin Insights Challenge 2026
+# Bénin Insights Challenge 2026 — IROKO Analytics
 
-Projet réalisé dans le cadre du hackathon **iSHEERO × DataCamp Donates — Bénin Insights Challenge 2026**.
+Projet réalisé par **IROKO Analytics** (Équipe 7) dans le cadre du hackathon **iSHEERO × DataCamp Donates — Bénin Insights Challenge 2026**.
 
 ## Objectif du projet
 
@@ -219,14 +219,14 @@ Le quota gratuit est de **1 TB de données scannées par mois**.
 Toujours tester en mode `sample` avant de lancer le mode `full`.
 Ne jamais utiliser `SELECT *` — sélectionner uniquement les colonnes nécessaires.
 
-## Rôles dans l'équipe
+## Équipe — IROKO Analytics
 
-| Profil | Responsabilités |
-|---|---|
-| **Data Engineer** | Pipeline ETL, extraction BigQuery, nettoyage, structuration |
-| **Data Analyst** | Visualisations, dashboard Streamlit, analyse descriptive |
-| **ML Engineer** | Modèles ML, analyse de sentiment, clustering |
-| **Data Scientist** | Questions analytiques, interprétation, rapport final, storytelling |
+| Profil | Membre | Responsabilités |
+|---|---|---|
+| 🔧 **Data Engineer** | **GODJEDO Aubrey** | Pipeline ETL, extraction BigQuery, nettoyage, structuration |
+| 📊 **Data Analyst** | **GUIDIGBI Randyx Emery Vianney** | Visualisations, dashboard Streamlit, analyse descriptive |
+| 🤖 **ML Engineer** | **RANDRIANIRINA Mahenina** | Modèles ML, analyse de sentiment, clustering |
+| 🧠 **Data Scientist** | **Pancrace KANHONOU** | Questions analytiques, interprétation, rapport final, storytelling |
 
 ## Utilisation de l'IA
 

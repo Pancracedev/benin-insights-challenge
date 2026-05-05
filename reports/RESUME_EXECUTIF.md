@@ -1,71 +1,104 @@
+# Comment le monde voit le Bénin
 
-# Comment le monde voit le Bénin : ce que révèlent 31 504 événements médiatiques
+**Transformer les données mondiales en insights locaux pour le Bénin**
 
-**Bénin Insights Challenge 2026** — Équipe 7 | iSHEERO x DataCamp Donates
-Phase 1 — Sprint Qualification | Mai 2026
+Bénin Insights Challenge 2026 — **IROKO Analytics** (Équipe 7) | iSHEERO × DataCamp Donates
 
 ---
-
 ## Qui sommes-nous ?
 
-Quatre profils, une seule mission : transformer les données mondiales en connaissances locales exploitables pour le Bénin.
+Nous sommes **IROKO Analytics** — comme l'arbre sacré du Bénin, nos racines plongent dans les données et notre vision porte loin.
 
-- **Data Engineer** — Construction du pipeline d'extraction et de nettoyage des données GDELT (72 tests unitaires, 100 % de réussite).
-- **Data Analyst** — Création du dashboard interactif avec 12 visualisations et analyse descriptive approfondie.
-- **ML Engineer** — Développement d'un modèle prédictif du ton médiatique (Random Forest, cross-validation F1 5-fold).
-- **Data Scientist** — Formulation des questions, interprétation des résultats, rédaction du rapport et storytelling.
+| Rôle | Membre | Contribution |
+|---|---|---|
+| 🔧 Data Engineer | **GODJEDO Aubrey** | Pipeline ETL automatisé, extraction BigQuery, 72 tests unitaires |
+| 📊 Data Analyst | **GUIDIGBI Randyx Emery Vianney** | Dashboard interactif Streamlit, 16 visualisations, filtres dynamiques |
+| 🤖 ML Engineer | **RANDRIANIRINA Mahenina** | Modèle prédictif Random Forest, prédiction du ton médiatique |
+| 🧠 Data Scientist | **Pancrace KANHONOU** | Définition des questions analytiques, coordination de l'équipe, transformation des résultats en insights, rédaction du rapport, storytelling et représentation devant le jury |
 
-## Notre démarche
+## Pourquoi c'est important
 
-Nous avons exploité **GDELT** (Global Database of Events, Language and Tone), la plus grande base de données ouverte d'événements géopolitiques au monde. Notre pipeline automatisé a extrait, nettoyé et enrichi **31 504 événements** et plus de **168 000 articles de presse** couvrant le Bénin entre janvier et décembre 2025, directement depuis Google BigQuery.
+Chaque jour, des centaines de médias internationaux publient des articles qui façonnent l'image du Bénin dans le monde. Mais qui contrôle ce récit ? Quel ton domine ? Et quand le Bénin fait-il la une ?
 
-Cinq questions analytiques ont guidé notre travail. Voici ce que les données nous apprennent.
+Notre équipe a analysé **31 504 événements** et **168 000 articles de presse** couvrant le Bénin en 2025, extraits de **GDELT**, la plus grande base de données ouverte d'événements géopolitiques au monde. Nos résultats s'adressent à trois publics : les **décideurs publics**, les **journalistes** et les **chercheurs**.
 
 ---
 
-## Cinq insights pour comprendre l'image internationale du Bénin
+## Notre méthode
 
-### 1 — Décembre concentre le double de la couverture habituelle
+**GDELT → Nettoyage → Analyse → Visualisation**
 
-Le mois de décembre 2025 totalise **30 785 articles**, soit près du double de la moyenne mensuelle. Ce pic est lié aux consultations diplomatiques régionales impliquant la CEDEAO, aux déclarations publiques d'acteurs nigérians concernant le Bénin et à des événements sécuritaires. Cette saisonnalité médiatique est prévisible et exploitable.
+1. **Extraction** depuis Google BigQuery avec un filtrage intelligent séparant le Bénin de Benin City (Nigeria).
+2. **Nettoyage** de 31 504 événements, enrichis de métadonnées (ton, acteurs, géolocalisation).
+3. **Analyse** autour de 5 questions structurantes + 2 analyses bonus.
+4. **Dashboard interactif** Streamlit avec 16 visualisations, filtres dynamiques et insights automatiques.
+5. **Modèle prédictif** Random Forest pour anticiper le ton médiatique d'un événement.
 
-> *Les décideurs béninois peuvent anticiper ces périodes d'attention intense pour y positionner une communication institutionnelle proactive.*
+Pipeline couvert par **72 tests unitaires** — 100 % de réussite.
+
+---
+
+## Cinq insights clés
+
+### 1 — Décembre explose : le coup d'État déjoué change tout
+
+Le mois de décembre 2025 totalise **30 785 articles**, soit le double de la moyenne. Le 7 décembre, le ministre de l'Intérieur **Alassane Seidou** annonce qu'une **tentative de coup d'État** a été déjouée après une brève occupation de la télévision nationale. Cet événement déclenche un pic massif de couverture.
+
+> 🏛️ **Décideurs** : Anticiper les périodes d'attention intense pour positionner une communication institutionnelle proactive.
+> 📰 **Journalistes** : Le pic de décembre est directement lié au coup d'État déjoué — un angle éditorial fort sur la stabilité politique en Afrique de l'Ouest.
+> 🔬 **Chercheurs** : Les pics de couverture suivent-ils un cycle saisonnier ou sont-ils purement événementiels ? Corréler avec le calendrier politique régional.
 
 ### 2 — L'image du Bénin est dominée par les crises
 
-**44 % des articles** ont un ton négatif, contre seulement **24 % de couverture positive**. Le ton moyen est de **−1,37** (sur une échelle où zéro est neutre). Le Bénin est couvert quand il y a des tensions — rarement quand il progresse.
+**44 % des articles** ont un ton négatif. Seulement **24 % sont positifs**. Le ton moyen est de **−1,37**. Le Bénin fait la une quand ça va mal — rarement quand le pays progresse.
 
-> *Un effort systématique de communication positive (accords économiques, avancées sociales, coopération internationale) est nécessaire pour rééquilibrer cette image.*
+> 🏛️ **Décideurs** : Accompagner chaque crise d'une communication positive (accords économiques, progrès sociaux) pour rééquilibrer l'image.
+> 📰 **Journalistes** : Ce ton négatif dominant reflète-t-il la réalité ou un biais éditorial ? Comparer avec le Togo et le Ghana pour investiguer.
+> 🔬 **Chercheurs** : La divergence entre Goldstein (+0,68) et AvgTone (−1,37) révèle un décalage entre stabilité géopolitique réelle et perception médiatique — un cas d'étude en *framing theory*.
 
-### 3 — 99 % des événements sont repris en moins de 24 heures
+### 3 — La couverture est instantanée : aucune marge pour réagir
 
-La couverture est **quasi instantanée** : un événement à Cotonou ou Porto-Novo est visible dans les rédactions du monde entier le jour même. Les responsables béninois ne disposent d'aucun délai pour préparer une réponse avant que l'information ne circule à l'international.
+**99 % des événements** béninois sont repris par les médias internationaux **en moins de 24 heures**. Un événement à Cotonou est visible dans les rédactions du monde entier le jour même. Notre carte de propagation temporelle montre que les pics d'événements et de pays couverts sont parfaitement synchrones.
 
-> *GDELT peut servir d'outil de veille en temps réel. Une cellule de monitoring automatisée alerterait les communicants dès qu'un seuil critique de couverture est franchi.*
+> 🏛️ **Décideurs** : Mettre en place une cellule de veille GDELT automatisée. Aucune fenêtre de temps n'existe pour préparer une réponse.
+> 📰 **Journalistes** : GDELT peut servir de système d'alerte pour le fact-checking en temps réel et la détection de breaking news.
+> 🔬 **Chercheurs** : Le délai varie-t-il selon le type d'événement (conflit vs coopération) ou la source (locale vs internationale) ?
 
 ### 4 — Ce sont les médias nigérians qui racontent le Bénin au monde
 
-**7 des 10 premières sources** couvrant le Bénin sont nigérianes (punchng.com, dailypost.ng, guardian.ng, etc.). Ce constat reflète la proximité géographique et les liens économiques forts entre les deux pays. La première source béninoise — **lanouvelletribune.info** — n'arrive qu'en sixième position. En période de crise, **saharareporters.com** apparaît comme source spécifique, absente de la couverture normale.
+**7 des 10 premières sources** sont nigérianes : punchng.com (1 184 événements en période normale), dailypost.ng, guardian.ng. La première source béninoise — lanouvelletribune.info — n'arrive qu'en 6e position. En crise, **saharareporters.com** surgit.
 
-> *Le Bénin devrait engager un dialogue éditorial direct avec les rédactions nigérianes — ses premiers « ambassadeurs médiatiques » — et investir dans la visibilité internationale de sa propre presse.*
+> 🏛️ **Décideurs** : Engager les rédactions nigérianes et renforcer la visibilité de la presse béninoise à l'international.
+> 📰 **Journalistes** : Pourquoi 7/10 des sources sont nigérianes ? La presse béninoise est sous-représentée — un sujet d'enquête en soi.
+> 🔬 **Chercheurs** : Appliquer l'analyse de réseau (*network analysis*) pour cartographier les *gatekeepers* médiatiques du Bénin.
 
 ### 5 — Le Bénin subit plus qu'il n'agit sur la scène internationale
 
-Dans **41 % des événements**, le Bénin est un simple cadre géographique. Il n'est véritablement **acteur** que dans **31 %** des cas, principalement via son gouvernement (788 événements) et ses forces armées (153). Le Bénin est davantage un terrain d'événements qu'un acteur géopolitique proactif.
+Dans **41 % des événements**, le Bénin est un simple décor géographique. Il n'est **acteur** que dans **31 %** des cas, via son gouvernement (788 événements) et ses forces armées (153). Le Bénin est davantage un terrain qu'un protagoniste.
 
-> *Multiplier les initiatives diplomatiques visibles — sommets, accords bilatéraux, prises de position à l'ONU, à l'UA et à la CEDEAO — permettrait de transformer cette image.*
-
----
-
-## Et aussi : 3 025 événements graves passent sous les radars
-
-Notre analyse bonus révèle **3 025 événements très négatifs** (Goldstein inférieur ou égal à −5) qui n'ont été couverts que par 1 à 5 articles. **73 %** se sont produits au Bénin. Il s'agit principalement de violences de masse (1 012), d'assauts (913) et d'attentats (318). Ces situations pourraient devenir des crises médiatiques majeures si un grand média international les reprend.
+> 🏛️ **Décideurs** : Multiplier les initiatives diplomatiques visibles (sommets, accords, prises de position ONU/UA/CEDEAO) pour passer de « terrain » à « acteur ».
+> 📰 **Journalistes** : Qui parle à la place du Bénin ? La souveraineté narrative du pays est en jeu.
+> 🔬 **Chercheurs** : Appliquer le concept de *media agency* — comparer le ratio Acteur/Contexte avec d'autres pays ouest-africains.
 
 ---
 
-## Notre modèle prédictif
+## Et aussi
 
-Un classificateur **Random Forest** prédit le ton médiatique d'un événement béninois à partir de ses caractéristiques. La variable la plus déterminante : **l'échelle de Goldstein** (intensité géopolitique). Ce modèle permet d'identifier en amont les types d'événements qui génèrent une couverture négative — et d'anticiper.
+- **3 025 événements graves passent sous les radars** : très négatifs mais couverts par moins de 5 articles. Ce sont des exclusivités journalistiques potentielles.
+- **Carte géographique** : la couverture s'étend sur **136 pays**, concentrée sur le Bénin, le Nigeria et la France.
+- **Sujets dominants** : les consultations diplomatiques dominent, suivies des déclarations publiques. En décembre, les « Déclarations publiques » explosent (+491 événements).
+
+---
+
+## Ce que nos résultats changent
+
+Ces chiffres ne sont pas que des statistiques. Ce sont des **leviers pour comprendre et agir** :
+
+- Pour les **décideurs** : des outils de veille et des recommandations concrètes.
+- Pour les **journalistes** : des angles éditoriaux exclusifs et des sujets sous-couverts à investiguer.
+- Pour les **chercheurs** : des hypothèses de recherche validées par les données et des cadres théoriques applicables.
+
+**Notre projet montre que les données mondiales peuvent devenir des connaissances locales utiles. Nous sommes prêts à en faire un produit concret.**
 
 ---
 
@@ -74,12 +107,12 @@ Un classificateur **Random Forest** prédit le ton médiatique d'un événement 
 | Livrable | Accès |
 |---|---|
 | Dépôt GitHub public | [github.com/jeangodjedo/benin-insights-challenge](https://github.com/jeangodjedo/benin-insights-challenge) |
-| Notebook EDA (10+ visualisations) | `notebooks/eda_benin_gdelt_2025.ipynb` |
+| Notebook EDA (16+ visualisations) | `notebooks/eda_benin_gdelt_2025.ipynb` |
 | Dashboard interactif Streamlit | `dashboard/app.py` |
 | Pipeline ETL testé (72 tests) | `pipeline/` |
 | Modèle ML sauvegardé | `models/tone_classifier_rf.pkl` |
 
 ---
 
-**Bénin Insights Challenge 2026** · iSHEERO x DataCamp Donates · Équipe 7
+**Bénin Insights Challenge 2026** · **IROKO Analytics** (Équipe 7) · iSHEERO × DataCamp Donates
 Données : GDELT Project (`gdelt-bq.gdeltv2.events`) · Période : janvier–décembre 2025
